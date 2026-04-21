@@ -31,7 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
   wireSlider('intensity',  'intensity',  1);
   wireSlider('ior',        'ior',        2);
   wireSlider('exposure',   'exposure',   1);
-  wireSlider('spread',     'spread',     1);
+  wireSlider('sigma',      'sigma',      3);
   wireSlider('block-w',    'blockW',     1);
   wireSlider('block-d',    'blockD',     1);
   wireSlider('block-h',    'blockH',     1);
