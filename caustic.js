@@ -47,8 +47,8 @@ const CausticRenderer = (() => {
     sigma: 0.05,
     blockW: 2.0,
     blockD: 2.0,
-    blockH: 1.0,
-    groundDist: 1.5,
+    blockH: 0.4,
+    groundDist: 2.0,  // = lens top surface to ground (optical focal distance)
     surfaceMode: 'sinusoidal',
     bumpAmp: 0.05,
     bumpFreq: 4.0,
@@ -398,7 +398,7 @@ void main() {
 
     const N = surfaceGridW * surfaceGridH;
     const data = new Float32Array(N * 4);
-    const blockTopY = params.groundDist + params.blockH;
+    const blockTopY = params.groundDist; // groundDist = lens top to ground
     for (let i = 0; i < N; i++) {
       data[i*4+0] = surfaceNormals[i*3+0];
       data[i*4+1] = surfaceNormals[i*3+1];
@@ -478,7 +478,7 @@ void main() {
     const res = params.surfaceRes;
     const hw = params.blockW / 2;
     const hd = params.blockD / 2;
-    const topY = params.groundDist + params.blockH; // Y of block top
+    const topY = params.groundDist; // Y of block top (= optical focal distance)
 
     let positions, normals, gridW, gridH;
 
@@ -572,7 +572,7 @@ void main() {
 
     // For OBJ mode: shift Y to reflect current blockTop (in case params changed after parse)
     if (params.surfaceMode === 'obj' && objSurface && objSurface.blockTopAtParse !== undefined) {
-      const curBlockTop = params.groundDist + params.blockH;
+      const curBlockTop = params.groundDist;
       const shift = curBlockTop - objSurface.blockTopAtParse;
       if (Math.abs(shift) > 1e-6) {
         for (let i = 0; i < positions.length / 3; i++) {
@@ -607,8 +607,8 @@ void main() {
 
     const hw = params.blockW / 2;
     const hd = params.blockD / 2;
-    const bot = params.groundDist;
-    const top = params.groundDist + params.blockH;
+    const top = params.groundDist;                  // lens top = focal distance from ground
+    const bot = params.groundDist - params.blockH;  // flat support bottom
 
     const verts = [];
     const indices = [];
@@ -845,12 +845,11 @@ void main() {
 
     const lightDir = getLightDir();
     const groundY  = 0;
-    const blockBottom = params.groundDist;
-    const blockTop    = params.groundDist + params.blockH;
-    // groundSize must cover the full caustic spread on the floor.
-    // Refracted rays travel ~groundDist downward after the block, so spread
-    // grows with groundDist.  Use block footprint + generous margin for distance.
-    const groundSize  = Math.max(params.blockW, params.blockD) * 2 + params.groundDist * 4;
+    // groundDist = lens top surface to ground (optical focal distance)
+    const blockTop    = params.groundDist;
+    const blockBottom = params.groundDist - params.blockH;
+    // Caustic spread depends on distance from block exit (bottom) to ground
+    const groundSize  = Math.max(params.blockW, params.blockD) * 2 + Math.max(blockBottom, 0.1) * 4;
     const groundHalf  = groundSize / 2;
 
     const W = canvas.width, H = canvas.height;
@@ -1115,9 +1114,9 @@ void main() {
 
         // Map to renderer coordinates
         // Caustic OBJ: X,Y in [0,1] = 2D grid; Z <= 0 = height deformation (in units of lens_width=1.0)
-        // Renderer: Y=up, top of block at groundDist+blockH
+        // Renderer: Y=up, lens top surface at params.groundDist (= optical focal distance)
         positions[idx*3+0] = (obj_x - 0.5) * blockW;
-        positions[idx*3+1] = (params.groundDist + blockH) + obj_z * blockW;
+        positions[idx*3+1] = params.groundDist + obj_z * blockW;  // blockTop = groundDist
         positions[idx*3+2] = (obj_y - 0.5) * blockD;
 
         normals[idx*3+0] = 0;
@@ -1153,9 +1152,8 @@ void main() {
     // requiredBlockH = depth in world units + small safety margin
     const requiredBlockH = maxAbsObjZ * blockW + 0.02;
 
-    // Safety clamp: if any surface point ended up below blockBottom (numerical
-    // overshoot from the solver), push it back up to avoid t1<0 in ray trace.
-    const blockBottomY = params.groundDist;
+    // Safety clamp: ensure no surface point falls below block bottom
+    const blockBottomY = params.groundDist - params.blockH;
     for (let i = 0; i < gridW * gridH; i++) {
       if (positions[i*3+1] < blockBottomY) {
         positions[i*3+1] = blockBottomY;
@@ -1163,7 +1161,7 @@ void main() {
     }
 
     return { positions, normals, gridW, gridH,
-             blockTopAtParse: params.groundDist + params.blockH,
+             blockTopAtParse: params.groundDist,  // blockTop = groundDist (focal distance)
              requiredBlockH };
   }
 
