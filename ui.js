@@ -379,11 +379,7 @@ self.addEventListener('message', async (e) => {
         setProgress(90);
         // Load the OBJ into the WebGL renderer
         try {
-          app.loadCausticOBJ(objText);
-          lastGeneratedObjText = objText;
-          if (btnDownloadObj) btnDownloadObj.disabled = false;
-
-          // Auto-configure preview to match design parameters:
+          // Auto-configure preview FIRST so params are correct when OBJ is parsed:
           //   groundDist = focalL × blockW   (projection distance)
           //   blockH     = thickness × blockW (lens thickness)
           const bW = parseFloat(document.getElementById('block-w').value);
@@ -397,6 +393,11 @@ self.addEventListener('message', async (e) => {
           const bhSlider = document.getElementById('block-h');
           bhSlider.value = Math.max(0.2, Math.min(3, targetBlockH));
           bhSlider.dispatchEvent(new Event('input'));
+
+          // Now parse OBJ — params.groundDist / blockH are already updated above
+          app.loadCausticOBJ(objText);
+          lastGeneratedObjText = objText;
+          if (btnDownloadObj) btnDownloadObj.disabled = false;
 
           setProgress(100);
           setWasmStatus(`Done! groundDist→${targetGroundDist}, blockH→${targetBlockH}`);

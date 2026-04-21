@@ -37,7 +37,7 @@ const CausticRenderer = (() => {
     ior: 1.5,
     exposure: 4.0,
     spread: 0.0,
-    sigma: 0.02,
+    sigma: 0.05,
     blockW: 2.0,
     blockD: 2.0,
     blockH: 1.0,
@@ -450,7 +450,9 @@ void main() {
       const srcPos = objSurface.positions, srcNrm = objSurface.normals;
 
       if (srcW >= TARGET_RES && srcH >= TARGET_RES) {
-        positions = srcPos; normals = srcNrm; gridW = srcW; gridH = srcH;
+        // Always copy so we can safely shift Y in place below
+        positions = new Float32Array(srcPos); normals = new Float32Array(srcNrm);
+        gridW = srcW; gridH = srcH;
       } else {
         gridW = TARGET_RES; gridH = TARGET_RES;
         positions = new Float32Array(gridW * gridH * 3);
@@ -525,6 +527,19 @@ void main() {
           normals[idx*3+1] = ny / nl;
           normals[idx*3+2] = nz / nl;
         }
+      }
+    }
+
+    // For OBJ mode: shift Y to reflect current blockTop (in case params changed after parse)
+    if (params.surfaceMode === 'obj' && objSurface && objSurface.blockTopAtParse !== undefined) {
+      const curBlockTop = params.groundDist + params.blockH;
+      const shift = curBlockTop - objSurface.blockTopAtParse;
+      if (Math.abs(shift) > 1e-6) {
+        for (let i = 0; i < positions.length / 3; i++) {
+          positions[i*3+1] += shift;
+        }
+        // Update cached blockTopAtParse so repeated calls don't double-shift
+        objSurface.blockTopAtParse = curBlockTop;
       }
     }
 
@@ -1007,7 +1022,8 @@ void main() {
       }
     }
 
-    return { positions, normals, gridW, gridH };
+    return { positions, normals, gridW, gridH,
+             blockTopAtParse: params.groundDist + params.blockH };
   }
 
   function loadCausticOBJ(text) {
