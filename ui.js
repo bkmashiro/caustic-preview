@@ -571,12 +571,15 @@ self.addEventListener('message', async (e) => {
           const gdSlider = document.getElementById('ground-dist');
           const gySlider = document.getElementById('ground-y');
 
+          // Small gap between lens bottom and floor to avoid z-fighting
+          const GAP = 0.01;
+
           function applyBlockH(h) {
             const clamped = Math.max(0.1, Math.min(8, h));
             bhSlider.value = clamped;
             bhSlider.dispatchEvent(new Event('input'));
-            // groundDist must equal blockH in table mode (lens top = focal distance)
-            const gd = Math.max(0.1, Math.min(12, h));
+            // groundDist = blockH + GAP so lens bottom sits just above floor
+            const gd = Math.max(0.1, Math.min(12, h + GAP));
             gdSlider.value = gd;
             gdSlider.dispatchEvent(new Event('input'));
           }
@@ -600,8 +603,8 @@ self.addEventListener('message', async (e) => {
             app.loadCausticOBJ(objText); // re-parse with corrected blockH
           }
 
-          // Reset camera so the generated lens is centred in view
-          app.setCameraPreset('persp');
+          // Reset camera to top-down so caustic pattern is immediately visible
+          app.setCameraPreset('top');
 
           setProgress(100);
           setWasmStatus(`Done — blockH: ${finalBlockH.toFixed(2)}, groundDist: ${finalBlockH.toFixed(2)}`);
@@ -762,7 +765,7 @@ self.addEventListener('message', async (e) => {
     if (az < 0) az += 360;
 
     // El: distance from center maps to elevation (center=90°, edge=0°)
-    const el = Math.max(5, Math.min(85, 90 * (1 - dist / R)));
+    const el = Math.max(0, Math.min(90, 90 * (1 - dist / R)));
 
     return { az: Math.round(az), el: Math.round(el) };
   }

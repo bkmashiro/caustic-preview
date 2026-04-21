@@ -1278,7 +1278,7 @@ void main() {
       } else {
         // Orbit
         camera.theta -= dx * 0.007;
-        camera.phi = Math.max(0.05, Math.min(Math.PI/2 - 0.02, camera.phi - dy * 0.007));
+        camera.phi = Math.max(0.01, Math.min(Math.PI / 2, camera.phi - dy * 0.007));
       }
     });
 
@@ -1302,7 +1302,7 @@ void main() {
         const dx = e.touches[0].clientX - touches[0].clientX;
         const dy = e.touches[0].clientY - touches[0].clientY;
         camera.theta -= dx * 0.007;
-        camera.phi = Math.max(0.05, Math.min(Math.PI/2 - 0.02, camera.phi - dy * 0.007));
+        camera.phi = Math.max(0.01, Math.min(Math.PI / 2, camera.phi - dy * 0.007));
       } else if (e.touches.length === 2) {
         const d0 = Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
         const d1 = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
