@@ -259,7 +259,7 @@ void main() {
   vec2 pc = gl_PointCoord - 0.5;
   float d = length(pc) * 2.0;
   float alpha = max(0.0, 1.0 - d * d);
-  float energy = alpha * vIntensity * 0.003;
+  float energy = alpha * vIntensity * 0.008;
   fragColor = vec4(energy, energy, energy, energy);
 }
 `;
@@ -801,12 +801,14 @@ void main() {
     gl.uniform1f(ul(progCompute, 'uBlockW'), params.blockW);
     gl.uniform1f(ul(progCompute, 'uBlockD'), params.blockD);
     gl.uniform1f(ul(progCompute, 'uGroundHalf'), groundSize / 2);
-    gl.uniform1f(ul(progCompute, 'uSpread'), params.spread);
-    // Scale intensity so OBJ (fewer points) produces same brightness as sinusoidal default
+    // Scale intensity & spread so fewer points (OBJ) produce same brightness/coverage
+    // as the sinusoidal reference (128×128 = 16384 pts)
     const numPts = surfaceGridW * surfaceGridH;
     const refPts = 128 * 128;
-    const ptScale = Math.sqrt(refPts / Math.max(numPts, 1));
+    const ptScale     = refPts / Math.max(numPts, 1);          // linear  → same total energy
+    const spreadScale = Math.sqrt(refPts / Math.max(numPts, 1)); // sqrt   → fills gaps between points
     gl.uniform1f(ul(progCompute, 'uIntensity'), params.intensity * ptScale);
+    gl.uniform1f(ul(progCompute, 'uSpread'),    params.spread    * spreadScale);
 
     gl.bindVertexArray(surfaceVAO);
     gl.drawArrays(gl.POINTS, 0, numPts);
