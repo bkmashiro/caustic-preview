@@ -248,9 +248,12 @@ void main() {
 }
 `;
 
-  // Forward splat shaders: for each surface grid point, compute where light
-  // lands on the ground (forward ray trace) and draw a Gaussian quad there.
-  // Rendered into an R32F FBO with additive blending — no gaps possible.
+  // Caustic shaders — Evan Wallace "area splatting" method:
+  //   Render the lens surface as a triangle MESH with each vertex displaced to
+  //   where refracted light lands on the ground (gHit).  The fragment shader uses
+  //   screen-space partial derivatives (dFdx/dFdy) of the original surface XZ to
+  //   compute the area-compression Jacobian → brightness.  A connected mesh has
+  //   zero gaps by construction; no Gaussian splat size to tune.
   const VS_CAUSTIC = `#version 300 es
 precision highp float;
 
@@ -264,10 +267,9 @@ uniform float uBlockBottom;
 uniform float uGroundY;
 uniform float uIOR;
 uniform vec3  uLightDir;
-uniform float uSplatR;      // splat half-size in world units
-uniform float uGroundHalf;  // ground coverage half-size for NDC mapping
+uniform float uGroundHalf;  // half-size of ground coverage (world units)
 
-out vec2 vOff;  // normalized offset [-1,1] within splat for Gaussian in FS
+out vec2 vSurfXZ;   // original surface XZ (world units) — for Jacobian in FS
 
 vec3 snell(vec3 I, vec3 N, float eta) {
   float cosI  = -dot(N, I);
@@ -276,81 +278,85 @@ vec3 snell(vec3 I, vec3 N, float eta) {
   return eta * I + (eta * cosI - sqrt(1.0 - sin2T)) * N;
 }
 
+// Returns gHit.xz on the ground, or (INF,INF) on TIR/invalid
+vec2 traceToGround(float wx, float wz, float wy, vec3 Nt, vec3 L) {
+  // Refract air → glass at top surface
+  vec3 D1 = snell(L, Nt, 1.0 / uIOR);
+  if (length(D1) < 0.01 || D1.y >= 0.0) return vec2(1e9);
+  D1 = normalize(D1);
+
+  // Trace to block bottom
+  float t1 = (uBlockBottom - wy) / D1.y;
+  if (t1 < 0.0) return vec2(1e9);
+  vec3 B = vec3(wx, wy, wz) + t1 * D1;
+
+  // Refract glass → air at flat bottom (N into glass = upward)
+  vec3 D2 = snell(D1, vec3(0.0, 1.0, 0.0), uIOR);
+  if (length(D2) < 0.01 || D2.y >= 0.0) return vec2(1e9);
+  D2 = normalize(D2);
+
+  // Trace to ground plane
+  float t2 = (uGroundY - B.y) / D2.y;
+  if (t2 < 0.0) return vec2(1e9);
+  return B.xz + t2 * D2.xz;
+}
+
 void main() {
-  int idx    = gl_VertexID / 6;
-  int corner = gl_VertexID % 6;
+  // Each cell = 2 triangles = 6 vertices;  grid has (W-1)×(H-1) cells
+  int cellIdx = gl_VertexID / 6;
+  int corner  = gl_VertexID % 6;
 
-  int si = idx % uSurfW;
-  int sj = idx / uSurfW;
+  int ci = cellIdx % (uSurfW - 1);
+  int cj = cellIdx / (uSurfW - 1);
 
-  if (sj >= uSurfH) {
+  if (cj >= uSurfH - 1) {
     gl_Position = vec4(2.0, 0.0, 0.0, 1.0);
-    vOff = vec2(2.0);
+    vSurfXZ = vec2(0.0);
     return;
   }
 
-  // Sample surface texture
+  // Map corner index → cell vertex (0,0)(1,0)(1,1) / (0,0)(1,1)(0,1)
+  int di = (corner == 1 || corner == 2 || corner == 4) ? 1 : 0;
+  int dj = (corner == 2 || corner == 4 || corner == 5) ? 1 : 0;
+
+  int si = ci + di;
+  int sj = cj + dj;
+
+  // Sample surface texture at this grid corner
   vec2 uv = (vec2(float(si), float(sj)) + 0.5) / vec2(float(uSurfW), float(uSurfH));
   vec4 sd  = texture(uSurfTex, uv);
   vec3 Nt  = length(sd.rgb) > 0.01 ? normalize(sd.rgb) : vec3(0.0, 1.0, 0.0);
   float h  = sd.a;
 
-  // World position of this surface point
   float wx = (float(si) / float(uSurfW - 1) - 0.5) * uBlockW;
   float wz = (float(sj) / float(uSurfH - 1) - 0.5) * uBlockD;
   float wy = uBlockTop + h;
 
   vec3 L = normalize(uLightDir);
+  vec2 gHit = traceToGround(wx, wz, wy, Nt, L);
 
-  // Step 1: Refract at top surface — air → glass
-  // N pointing into incident medium (air, above) = Nt (surface normal, upward)
-  vec3 D1 = snell(L, Nt, 1.0 / uIOR);
-  if (length(D1) < 0.01 || D1.y >= 0.0) {
-    gl_Position = vec4(2.0, 0.0, 0.0, 1.0); vOff = vec2(2.0); return;
-  }
-  D1 = normalize(D1);
+  vSurfXZ = vec2(wx, wz);
 
-  // Step 2: Trace to block bottom
-  float t1 = (uBlockBottom - wy) / D1.y;
-  if (t1 < 0.0) { gl_Position = vec4(2.0,0.0,0.0,1.0); vOff=vec2(2.0); return; }
-  vec3 B = vec3(wx, wy, wz) + t1 * D1;
-
-  // Step 3: Refract at block bottom — glass → air
-  // N pointing into incident medium (glass, above) = (0,1,0)
-  vec3 D2 = snell(D1, vec3(0.0, 1.0, 0.0), uIOR);
-  if (length(D2) < 0.01 || D2.y >= 0.0) {
-    gl_Position = vec4(2.0,0.0,0.0,1.0); vOff=vec2(2.0); return;
-  }
-  D2 = normalize(D2);
-
-  // Step 4: Trace to ground
-  float t2 = (uGroundY - B.y) / D2.y;
-  if (t2 < 0.0) { gl_Position = vec4(2.0,0.0,0.0,1.0); vOff=vec2(2.0); return; }
-  vec2 gHit = B.xz + t2 * D2.xz;
-
-  // Quad corners (2 triangles, CCW)
-  float cx = (corner == 1 || corner == 2 || corner == 4) ?  1.0 : -1.0;
-  float cz = (corner == 2 || corner == 4 || corner == 5) ?  1.0 : -1.0;
-  vOff = vec2(cx, cz);
-
-  // Map gHit world XZ → FBO NDC, add corner offset
-  vec2 ndc = gHit / uGroundHalf
-           + vec2(cx, cz) * (uSplatR / uGroundHalf);
+  // Map gHit world XZ → FBO NDC [-1,1]
+  vec2 ndc = (length(gHit) < 1e8) ? (gHit / uGroundHalf) : vec2(2.0);
   gl_Position = vec4(ndc, 0.0, 1.0);
 }
 `;
 
   const FS_CAUSTIC = `#version 300 es
 precision highp float;
-in  vec2 vOff;
-uniform float uSplatScale; // 1.0 for R32F; 1/N_surf for RGBA8 fallback
+in  vec2 vSurfXZ;        // interpolated original surface XZ (world units)
+uniform float uJacScale; // = (CAUSTIC_W / groundSize)^2  →  flat lens → 1.0 output
 out vec4 fragColor;
 
 void main() {
-  float d2 = dot(vOff, vOff);   // 0 at center, 2 at corners
-  float w  = exp(-d2 * 2.0);    // Gaussian: 1 at center, ~0.02 at corners
-  float v  = w * uSplatScale;
-  fragColor = vec4(v, v, v, v); // write to all channels for RGBA8 compatibility
+  // Screen-space partial derivatives of original surface position (world units/FBO pixel)
+  // Large Jacobian = many surface cells per ground pixel = caustic focus = bright
+  vec2 dsx = dFdx(vSurfXZ);
+  vec2 dsy = dFdy(vSurfXZ);
+  float jac = abs(dsx.x * dsy.y - dsx.y * dsy.x); // 2D cross product (area element)
+  float v   = jac * uJacScale;
+  fragColor = vec4(v, v, v, v); // all channels for RGBA8 compat
 }
 `;
 
@@ -789,10 +795,6 @@ void main() {
     const groundSize  = Math.max(params.blockW, params.blockD) * 5;
     const groundHalf  = groundSize / 2;
 
-    // Adaptive splat radius: wide enough to fill grid gaps, min = sigma
-    const gridSpacing = params.blockW / Math.max(surfaceGridW - 1, 1);
-    const splatR = Math.max(params.sigma, gridSpacing * 1.5);
-
     const W = canvas.width, H = canvas.height;
 
     // ── Pass 0: Caustic forward-splat into R32F FBO ───────────────────────
@@ -818,14 +820,15 @@ void main() {
       gl.uniform1f(ul(progCaustic, 'uGroundY'),    groundY);
       gl.uniform1f(ul(progCaustic, 'uIOR'),        params.ior);
       gl.uniform3fv(ul(progCaustic, 'uLightDir'),  lightDir);
-      gl.uniform1f(ul(progCaustic, 'uSplatR'),     splatR);
       gl.uniform1f(ul(progCaustic, 'uGroundHalf'), groundHalf);
-      // RGBA8 fallback: scale each splat so ~200 fully-overlapping splats ≈ 1.0
-      const nSurf = surfaceGridW * surfaceGridH;
-      gl.uniform1f(ul(progCaustic, 'uSplatScale'), causticUseFloat ? 1.0 : (200.0 / nSurf));
+      // Jacobian scale: flat lens → causticRaw ≈ 1.0 everywhere
+      // jac = (surfaceCell_world_area) / (groundPixel_world_area)
+      // uJacScale = (CAUSTIC_W / groundSize)^2
+      const jacScale = (CAUSTIC_W / groundSize) * (CAUSTIC_H / groundSize);
+      gl.uniform1f(ul(progCaustic, 'uJacScale'), jacScale);
 
       gl.bindVertexArray(emptyVAO);
-      gl.drawArrays(gl.TRIANGLES, 0, nSurf * 6);
+      gl.drawArrays(gl.TRIANGLES, 0, (surfaceGridW - 1) * (surfaceGridH - 1) * 6);
       gl.bindVertexArray(null);
 
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
