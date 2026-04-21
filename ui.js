@@ -115,19 +115,17 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   function updateComputedParams() {
-    const presetKey = document.getElementById('device-preset').value;
-    const preset    = DEVICE_PRESETS[presetKey] || DEVICE_PRESETS.form4_fine;
-    const lensSize  = parseInt(document.getElementById('lens-size-mm').value, 10);
-    const projDist  = parseInt(document.getElementById('proj-dist-mm').value, 10);
+    const presetKey     = document.getElementById('device-preset').value;
+    const preset        = DEVICE_PRESETS[presetKey] || DEVICE_PRESETS.form4_fine;
+    const lensSize      = parseFloat(document.getElementById('lens-size-mm').value) || 50;
+    const glassThickMm  = parseFloat(document.getElementById('proj-dist-mm').value) || 8;
+    const resW          = preset.resW;
 
-    // Update display labels
-    document.getElementById('lens-size-mm-val').textContent = lensSize + ' mm';
-    document.getElementById('proj-dist-mm-val').textContent = projDist + ' mm';
-
-    // Derived parameters (normalised to lens width = 1.0)
-    const focalL    = (projDist / lensSize).toFixed(2);
-    const thickness = preset.thicknessRatio.toFixed(2);
-    const resW      = preset.resW;
+    // Table-on-ground mode: the lens sits flat on the table.
+    // focal_l = glassThickness / lensSize  (light exits at table level = focal plane)
+    // thickness = focal_l  (lens curves from flat top all the way down to table)
+    const focalL    = +(glassThickMm / lensSize).toFixed(3);
+    const thickness = focalL; // same value: deformation depth = focal distance
 
     // Write to hidden inputs (used by generate handler)
     document.getElementById('wasm-res-w').value      = resW;
@@ -136,7 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Update info display
     document.getElementById('computed-params-display').textContent =
-      `res_w: ${resW} · focal_l: ${focalL} · thickness: ${thickness} · est. vertices: ${resW}²=${resW*resW}`;
+      `res_w: ${resW} · focal_l: ${focalL.toFixed(2)} · thickness: ${thickness.toFixed(2)} · 顶点数: ${resW}²=${resW*resW}`;
   }
 
   ['device-preset','lens-size-mm','proj-dist-mm'].forEach(id => {
@@ -382,20 +380,25 @@ self.addEventListener('message', async (e) => {
         setProgress(90);
         // Load the OBJ into the WebGL renderer
         try {
-          // Auto-configure preview FIRST so params are correct when OBJ is parsed:
-          //   groundDist = focalL × blockW   (projection distance)
-          //   blockH     = thickness × blockW (lens thickness)
+          // Table-on-ground mode: lens sits flat on table, caustic appears on table.
+          // focal distance = glass thickness (both equal focalL × blockW).
+          // blockBottom = groundY = 0; blockTop = blockH = groundDist.
           const bW = parseFloat(document.getElementById('block-w').value);
-          const targetGroundDist = +(focalL    * bW).toFixed(2);
-          const targetBlockH     = +(thickness * bW).toFixed(2);
-
-          const gdSlider = document.getElementById('ground-dist');
-          gdSlider.value = Math.max(0, Math.min(12, targetGroundDist));
-          gdSlider.dispatchEvent(new Event('input'));
+          const targetBlockH = +(focalL * bW).toFixed(2); // thickness = focal dist
 
           const bhSlider = document.getElementById('block-h');
           bhSlider.value = Math.max(0.1, Math.min(8, targetBlockH));
           bhSlider.dispatchEvent(new Event('input'));
+
+          // groundDist = blockH (lens top to table = thickness)
+          const gdSlider = document.getElementById('ground-dist');
+          gdSlider.value = Math.max(0.1, Math.min(12, targetBlockH));
+          gdSlider.dispatchEvent(new Event('input'));
+
+          // groundY = 0 (table surface)
+          const gySlider = document.getElementById('ground-y');
+          gySlider.value = 0;
+          gySlider.dispatchEvent(new Event('input'));
 
           // Now parse OBJ — params.groundDist / blockH are already updated above
           const loadInfo = app.loadCausticOBJ(objText);
