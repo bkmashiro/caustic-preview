@@ -42,7 +42,7 @@ const CausticRenderer = (() => {
     intensity: 3.0,
     ior: 1.5,
     exposure: 4.0,
-    spread: 2.5,
+    spread: 0.0,
     blockW: 2.0,
     blockD: 2.0,
     blockH: 1.0,
@@ -832,13 +832,18 @@ void main() {
     gl.uniform1f(ul(progCompute, 'uBlockW'), params.blockW);
     gl.uniform1f(ul(progCompute, 'uBlockD'), params.blockD);
     gl.uniform1f(ul(progCompute, 'uGroundHalf'), groundSize / 2);
-    // Scale intensity and spread to normalise for point count vs 128×128 reference
+    // Scale intensity to normalise for point count vs 128×128 reference
     const numPts = surfaceGridW * surfaceGridH;
     const refPts = 128 * 128;
-    const ptScale     = refPts / Math.max(numPts, 1);
-    const spreadScale = Math.sqrt(refPts / Math.max(numPts, 1));
+    const ptScale = refPts / Math.max(numPts, 1);
     gl.uniform1f(ul(progCompute, 'uIntensity'), params.intensity * ptScale);
-    gl.uniform1f(ul(progCompute, 'uSpread'),    params.spread    * spreadScale);
+
+    // Auto-compute minimum spread so adjacent photons always overlap on the FBO.
+    // Point spacing on ground (in FBO pixels): blockW / (numPtsX-1) / groundSize * causticW
+    const ptSpacingPx = (params.blockW / Math.max(surfaceGridW - 1, 1)) / groundSize * causticW;
+    const autoMinSpread = ptSpacingPx * 2.5; // diameter = 2.5× spacing → comfortable overlap
+    // User 'spread' param adds softness on top; auto ensures gap-free floor.
+    gl.uniform1f(ul(progCompute, 'uSpread'), Math.max(params.spread, autoMinSpread));
 
     gl.bindVertexArray(surfaceVAO);
     gl.drawArrays(gl.POINTS, 0, numPts);
