@@ -995,9 +995,11 @@ void main() {
         const obj_z = v[2]; // negative height deformation
 
         // Map to renderer coordinates
-        positions[idx*3+0] = (obj_x - 0.5) * blockW;          // center at origin, scale to block width
-        positions[idx*3+1] = blockH / 2 + obj_z * blockW;     // Z deformation → Y displacement
-        positions[idx*3+2] = (obj_y - 0.5) * blockD;          // center at origin, scale to block depth
+        // Caustic OBJ: X,Y in [0,1] = 2D grid; Z ≤ 0 = height deformation (in units of lens_width=1.0)
+        // Renderer: Y=up, top of block at groundDist+blockH
+        positions[idx*3+0] = (obj_x - 0.5) * blockW;
+        positions[idx*3+1] = (params.groundDist + blockH) + obj_z * blockW;
+        positions[idx*3+2] = (obj_y - 0.5) * blockD;
 
         normals[idx*3+0] = 0;
         normals[idx*3+1] = 1;
