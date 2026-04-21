@@ -455,10 +455,49 @@ void main() {
     let positions, normals, gridW, gridH;
 
     if (params.surfaceMode === 'obj' && objSurface) {
-      positions = objSurface.positions;
-      normals = objSurface.normals;
-      gridW = objSurface.gridW;
-      gridH = objSurface.gridH;
+      // Bilinear upsample OBJ grid to TARGET_RES×TARGET_RES so we always
+      // have enough photon samples regardless of solver resolution setting.
+      const TARGET_RES = 128;
+      const srcW = objSurface.gridW, srcH = objSurface.gridH;
+      const srcPos = objSurface.positions, srcNrm = objSurface.normals;
+
+      if (srcW >= TARGET_RES && srcH >= TARGET_RES) {
+        positions = srcPos; normals = srcNrm; gridW = srcW; gridH = srcH;
+      } else {
+        gridW = TARGET_RES; gridH = TARGET_RES;
+        positions = new Float32Array(gridW * gridH * 3);
+        normals   = new Float32Array(gridW * gridH * 3);
+
+        for (let dj = 0; dj < gridH; dj++) {
+          for (let di = 0; di < gridW; di++) {
+            const fx = di / (gridW - 1) * (srcW - 1);
+            const fy = dj / (gridH - 1) * (srcH - 1);
+            const ix = Math.min(Math.floor(fx), srcW - 2);
+            const iy = Math.min(Math.floor(fy), srcH - 2);
+            const tx = fx - ix, ty = fy - iy;
+
+            const i00 = (iy * srcW + ix) * 3;
+            const i10 = (iy * srcW + ix + 1) * 3;
+            const i01 = ((iy + 1) * srcW + ix) * 3;
+            const i11 = ((iy + 1) * srcW + ix + 1) * 3;
+            const out  = (dj * gridW + di) * 3;
+
+            const w00 = (1-tx)*(1-ty), w10 = tx*(1-ty);
+            const w01 = (1-tx)*ty,     w11 = tx*ty;
+
+            for (let c = 0; c < 3; c++) {
+              positions[out+c] = srcPos[i00+c]*w00 + srcPos[i10+c]*w10
+                               + srcPos[i01+c]*w01 + srcPos[i11+c]*w11;
+              normals[out+c]   = srcNrm[i00+c]*w00 + srcNrm[i10+c]*w10
+                               + srcNrm[i01+c]*w01 + srcNrm[i11+c]*w11;
+            }
+            // Re-normalise the interpolated normal
+            const nx=normals[out], ny=normals[out+1], nz=normals[out+2];
+            const nl = Math.sqrt(nx*nx+ny*ny+nz*nz) || 1;
+            normals[out] /= nl; normals[out+1] /= nl; normals[out+2] /= nl;
+          }
+        }
+      }
     } else {
       gridW = res;
       gridH = res;
