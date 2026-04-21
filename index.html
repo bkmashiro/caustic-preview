@@ -380,111 +380,12 @@
     <p>Resin block · Forward ray tracing · WebGL2</p>
   </div>
 
-  <div class="section">
-    <div class="section-title">☀ Light Direction</div>
-    <div id="hemisphere-container">
-      <canvas id="hemisphere-canvas" width="140" height="140"></canvas>
-    </div>
-    <div class="control-row">
-      <label>Azimuth</label>
-      <input type="range" id="azimuth" min="0" max="360" value="45" step="1">
-      <span class="value-display" id="azimuth-val">45°</span>
-    </div>
-    <div class="control-row">
-      <label>Elevation</label>
-      <input type="range" id="elevation" min="0" max="90" value="90" step="1">
-      <span class="value-display" id="elevation-val">45°</span>
-    </div>
-    <div class="control-row">
-      <label>Intensity</label>
-      <input type="range" id="intensity" min="0.1" max="10" value="2.0" step="0.05">
-      <span class="value-display" id="intensity-val">1.5</span>
-    </div>
-  </div>
-
-  <div class="section">
-    <div class="section-title">🔬 Optics</div>
-    <div class="control-row">
-      <label>Refractive Index</label>
-      <input type="number" id="ior" min="1.0" max="3.0" value="1.62" step="0.01"
-             style="width:70px;background:#1a1e2e;color:#e0e4f0;border:1px solid #2a3050;border-radius:4px;padding:2px 6px;font-size:13px;">
-    </div>
-    <div class="control-row">
-      <label>Caustic Exposure</label>
-      <input type="range" id="exposure" min="0.1" max="12" value="4.0" step="0.05">
-      <span class="value-display" id="exposure-val">2.0</span>
-    </div>
-    <div class="control-row">
-      <label>Sharpness σ</label>
-      <input type="range" id="sigma" min="0.005" max="0.3" value="0.05" step="0.005">
-      <span class="value-display" id="sigma-val">0.05</span>
-    </div>
-  </div>
-
-  <div class="section">
-    <div class="section-title">📦 Block</div>
-    <div class="control-row">
-      <label>Width</label>
-      <input type="range" id="block-w" min="0.5" max="4" value="2" step="0.05">
-      <span class="value-display" id="block-w-val">2.0</span>
-    </div>
-    <div class="control-row">
-      <label>Depth</label>
-      <input type="range" id="block-d" min="0.5" max="4" value="2" step="0.05">
-      <span class="value-display" id="block-d-val">2.0</span>
-    </div>
-    <div class="control-row">
-      <label>Thickness</label>
-      <input type="range" id="block-h" min="0.05" max="4" value="0.4" step="0.025">
-      <span class="value-display" id="block-h-val">0.4</span>
-    </div>
-    <div class="control-row">
-      <label>Lens → Floor</label>
-      <input type="range" id="ground-dist" min="0.1" max="12" value="2.0" step="0.05">
-      <span class="value-display" id="ground-dist-val">2.0</span>
-    </div>
-    <div class="control-row">
-      <label>Ground Y</label>
-      <input type="range" id="ground-y" min="-6" max="2" value="0" step="0.05">
-      <span class="value-display" id="ground-y-val">0.0</span>
-    </div>
-  </div>
-
-  <div class="section">
-    <div class="section-title">〰 Surface Profile</div>
-    <div class="control-row">
-      <label>Mode</label>
-      <select id="surface-mode">
-        <option value="sinusoidal">Sinusoidal bumps</option>
-        <option value="concentric">Concentric rings</option>
-        <option value="diagonal">Diagonal waves</option>
-        <option value="random">Random (Perlin-like)</option>
-        <option value="flat">Flat (no caustic)</option>
-        <option value="obj">Loaded OBJ ↓</option>
-      </select>
-    </div>
-    <div class="control-row">
-      <label>Bump Amplitude</label>
-      <input type="range" id="bump-amp" min="0" max="0.3" value="0.05" step="0.002">
-      <span class="value-display" id="bump-amp-val">0.05</span>
-    </div>
-    <div class="control-row">
-      <label>Bump Frequency</label>
-      <input type="range" id="bump-freq" min="0.5" max="20" value="4" step="0.1">
-      <span class="value-display" id="bump-freq-val">4.0</span>
-    </div>
-    <div class="control-row">
-      <label>Resolution</label>
-      <input type="range" id="surface-res" min="16" max="256" value="128" step="8">
-      <span class="value-display" id="surface-res-val">128</span>
-    </div>
-  </div>
-
+  <!-- ══ Always visible: Generate ══ -->
   <div class="section">
     <div class="section-title">🖼 Generate from Image</div>
 
     <!-- Step 1 -->
-    <div style="font-size:11px;color:#556;margin:2px 0 5px">① Upload high-contrast PNG (white pattern, black background)</div>
+    <div style="font-size:11px;color:#667;margin:2px 0 5px">① Upload a high-contrast PNG<br><span style="color:#445">(white pattern on black background)</span></div>
     <div id="png-upload-row" style="margin-bottom:0">
       <button class="btn" onclick="document.getElementById('png-file-input').click()">🖼 Choose PNG…</button>
       <input type="file" id="png-file-input" accept="image/png">
@@ -494,15 +395,12 @@
     </div>
 
     <!-- Step 2 — schematic dimension diagram -->
-    <div style="font-size:11px;color:#556;margin:8px 0 4px">② Physical dimensions (mm)</div>
+    <div style="font-size:11px;color:#667;margin:8px 0 4px">② Set physical dimensions (mm)</div>
     <div style="display:flex;gap:0;align-items:flex-start;margin-bottom:0">
-      <!-- Cross-section sketch -->
       <canvas id="lens-diagram" width="162" height="172"
         style="flex-shrink:0;display:block;border-radius:3px"></canvas>
-      <!-- Dimension inputs — vertically aligned to diagram regions by JS -->
       <div style="display:flex;flex-direction:column;padding-left:4px;min-width:0">
         <div id="ldim-sp-top" style="flex-shrink:0;height:42px"></div>
-        <!-- Lens depth -->
         <div style="flex-shrink:0;height:40px;display:flex;flex-direction:column;justify-content:center;gap:2px">
           <div style="font-size:9px;color:rgba(80,155,230,0.9);line-height:1;white-space:nowrap">↕ Lens depth</div>
           <div style="display:flex;align-items:center;gap:2px">
@@ -512,7 +410,6 @@
           </div>
         </div>
         <div id="ldim-sp-mid" style="flex-shrink:0;height:36px"></div>
-        <!-- Base thickness -->
         <div style="flex-shrink:0;height:40px;display:flex;flex-direction:column;justify-content:center;gap:2px">
           <div style="font-size:9px;color:rgba(75,195,130,0.9);line-height:1;white-space:nowrap">↕ Base thickness</div>
           <div style="display:flex;align-items:center;gap:2px">
@@ -523,7 +420,6 @@
         </div>
       </div>
     </div>
-    <!-- Width input — centered under the diagram block -->
     <div style="display:flex;align-items:center;justify-content:center;gap:4px;width:162px;margin:3px 0 6px">
       <span style="font-size:10px;color:#445">←</span>
       <input type="number" id="lens-size-mm" min="10" max="200" value="50" step="1"
@@ -534,28 +430,23 @@
     <span class="value-display" id="proj-dist-mm-val" style="display:none"></span>
 
     <!-- Step 3 -->
-    <div style="font-size:11px;color:#556;margin:4px 0 5px">③ Print resolution</div>
-    <div class="control-row">
-      <label>Printer</label>
-      <select id="device-preset" style="flex:1;background:#1e1e2a;color:#e0e0e0;border:1px solid #3a3a50;border-radius:4px;padding:3px 6px;font-size:12px;">
-        <option value="preview">Quick preview (low-res, 32pt)</option>
-        <option value="form4_fast">Form 4 SLA 25μm — fast (48pt)</option>
-        <option value="form4_fine" selected>Form 4 SLA 25μm — fine (80pt)</option>
-        <option value="form4_ultra">Form 4 SLA 25μm — ultra (128pt)</option>
-        <option value="hubs_sla">Hubs.com Premium SLA (64pt)</option>
-      </select>
-    </div>
+    <div style="font-size:11px;color:#667;margin:4px 0 5px">③ Choose print resolution</div>
+    <select id="device-preset" style="width:100%;background:#1e1e2a;color:#e0e0e0;border:1px solid #3a3a50;border-radius:4px;padding:5px 8px;font-size:12px;margin-bottom:6px;">
+      <option value="preview">Quick preview (low-res, 32pt)</option>
+      <option value="form4_fast">Form 4 SLA 25μm — fast (48pt)</option>
+      <option value="form4_fine" selected>Form 4 SLA 25μm — fine (80pt)</option>
+      <option value="form4_ultra">Form 4 SLA 25μm — ultra (128pt)</option>
+      <option value="hubs_sla">Hubs.com Premium SLA (64pt)</option>
+    </select>
 
     <!-- Hidden computed inputs -->
     <input type="hidden" id="wasm-res-w" value="80">
     <input type="hidden" id="wasm-focal-l" value="1.00">
     <input type="hidden" id="wasm-thickness" value="0.15">
-    <div style="font-size:10px;color:#333;margin:2px 0 6px;padding:3px 6px;background:#111;border-radius:3px" id="computed-params-display">
-      res_w: 80 · focal_l: 1.00 · thickness: 0.15
-    </div>
+    <div id="computed-params-display" style="display:none"></div>
 
-    <!-- Generate button -->
-    <button class="btn" id="btn-generate" disabled>⚡ Generate Caustic Surface</button>
+    <!-- Generate + Download -->
+    <button class="btn" id="btn-generate" disabled style="width:100%;justify-content:center;font-size:14px;padding:9px;">⚡ Generate</button>
     <button class="btn" id="btn-download-obj" disabled style="margin-top:6px;width:100%;justify-content:center;">⬇ Download OBJ</button>
 
     <!-- Progress -->
@@ -567,53 +458,165 @@
     </div>
   </div>
 
-  <div class="section">
-    <div class="section-title">📂 Load OBJ Surface</div>
-    <div id="obj-upload-row">
-      <button class="btn" onclick="document.getElementById('obj-file-input').click()">📁 Choose OBJ…</button>
-      <input type="file" id="obj-file-input" accept=".obj">
-    </div>
-    <div id="obj-status">No OBJ loaded — using procedural surface</div>
-    <p class="tip">Load the OBJ output from poisson_caustic_design. The top surface vertices are used directly.</p>
-  </div>
-
-  <div class="section">
-    <div class="section-title">🎨 Appearance</div>
-    <div class="color-row">
-      <label>Caustic Color</label>
-      <input type="color" id="caustic-color" value="#ffe090">
-    </div>
-    <div class="color-row">
-      <label>Ground Color</label>
-      <input type="color" id="ground-color" value="#202028">
-    </div>
-    <div class="color-row">
-      <label>Block Color</label>
-      <input type="color" id="block-color" value="#8ab4d0">
-    </div>
-    <div class="control-row">
-      <label>Show Block</label>
-      <input type="checkbox" id="show-block" checked style="cursor:pointer">
-    </div>
-    <div class="control-row">
-      <label>Show Grid</label>
-      <input type="checkbox" id="show-grid" checked style="cursor:pointer">
-    </div>
-    <div class="control-row">
-      <label>Caustic Map Only</label>
-      <input type="checkbox" id="show-caustic-only" style="cursor:pointer">
+  <!-- ══ Always visible: View ══ -->
+  <div class="section" style="padding:10px 16px">
+    <div class="btn-group" style="margin:0">
+      <button class="btn" onclick="setCameraPreset('top')">⬆ Top</button>
+      <button class="btn" onclick="setCameraPreset('side')">◀ Side</button>
+      <button class="btn" onclick="setCameraPreset('persp')">↗ 3D</button>
     </div>
   </div>
 
-  <div class="section">
-    <div class="section-title">📷 View</div>
-    <div class="btn-group">
-      <button class="btn" id="btn-top" onclick="setCameraPreset('top')">Top</button>
-      <button class="btn" id="btn-side" onclick="setCameraPreset('side')">Side</button>
-      <button class="btn" id="btn-persp" onclick="setCameraPreset('persp')">Perspective</button>
-    </div>
-    <p class="tip">Drag to orbit · Scroll to zoom · Right-drag to pan</p>
+  <!-- ══ Advanced toggle ══ -->
+  <div style="padding:8px 16px">
+    <button id="btn-advanced" class="btn"
+      style="width:100%;justify-content:center;font-size:11px;color:#445;border-color:#222230;background:#111118;">
+      ⚙ Advanced controls ▾
+    </button>
   </div>
+
+  <!-- ══ Advanced sections (hidden by default) ══ -->
+  <div id="advanced-sections" style="display:none">
+
+    <div class="section">
+      <div class="section-title">☀ Light Direction</div>
+      <div id="hemisphere-container">
+        <canvas id="hemisphere-canvas" width="140" height="140"></canvas>
+      </div>
+      <div class="control-row">
+        <label>Azimuth</label>
+        <input type="range" id="azimuth" min="0" max="360" value="45" step="1">
+        <span class="value-display" id="azimuth-val">45°</span>
+      </div>
+      <div class="control-row">
+        <label>Elevation</label>
+        <input type="range" id="elevation" min="0" max="90" value="90" step="1">
+        <span class="value-display" id="elevation-val">45°</span>
+      </div>
+      <div class="control-row">
+        <label>Intensity</label>
+        <input type="range" id="intensity" min="0.1" max="10" value="2.0" step="0.05">
+        <span class="value-display" id="intensity-val">1.5</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">🔬 Optics</div>
+      <div class="control-row">
+        <label>Refractive Index</label>
+        <input type="number" id="ior" min="1.0" max="3.0" value="1.62" step="0.01"
+               style="width:70px;background:#1a1e2e;color:#e0e4f0;border:1px solid #2a3050;border-radius:4px;padding:2px 6px;font-size:13px;">
+      </div>
+      <div class="control-row">
+        <label>Caustic Exposure</label>
+        <input type="range" id="exposure" min="0.1" max="12" value="4.0" step="0.05">
+        <span class="value-display" id="exposure-val">2.0</span>
+      </div>
+      <div class="control-row">
+        <label>Sharpness σ</label>
+        <input type="range" id="sigma" min="0.005" max="0.3" value="0.05" step="0.005">
+        <span class="value-display" id="sigma-val">0.05</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">📦 Block</div>
+      <div class="control-row">
+        <label>Width</label>
+        <input type="range" id="block-w" min="0.5" max="4" value="2" step="0.05">
+        <span class="value-display" id="block-w-val">2.0</span>
+      </div>
+      <div class="control-row">
+        <label>Depth</label>
+        <input type="range" id="block-d" min="0.5" max="4" value="2" step="0.05">
+        <span class="value-display" id="block-d-val">2.0</span>
+      </div>
+      <div class="control-row">
+        <label>Thickness</label>
+        <input type="range" id="block-h" min="0.05" max="4" value="0.4" step="0.025">
+        <span class="value-display" id="block-h-val">0.4</span>
+      </div>
+      <div class="control-row">
+        <label>Lens → Floor</label>
+        <input type="range" id="ground-dist" min="0.1" max="12" value="2.0" step="0.05">
+        <span class="value-display" id="ground-dist-val">2.0</span>
+      </div>
+      <div class="control-row">
+        <label>Ground Y</label>
+        <input type="range" id="ground-y" min="-6" max="2" value="0" step="0.05">
+        <span class="value-display" id="ground-y-val">0.0</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">〰 Surface Profile</div>
+      <div class="control-row">
+        <label>Mode</label>
+        <select id="surface-mode">
+          <option value="sinusoidal">Sinusoidal bumps</option>
+          <option value="concentric">Concentric rings</option>
+          <option value="diagonal">Diagonal waves</option>
+          <option value="random">Random (Perlin-like)</option>
+          <option value="flat">Flat (no caustic)</option>
+          <option value="obj">Loaded OBJ ↓</option>
+        </select>
+      </div>
+      <div class="control-row">
+        <label>Bump Amplitude</label>
+        <input type="range" id="bump-amp" min="0" max="0.3" value="0.05" step="0.002">
+        <span class="value-display" id="bump-amp-val">0.05</span>
+      </div>
+      <div class="control-row">
+        <label>Bump Frequency</label>
+        <input type="range" id="bump-freq" min="0.5" max="20" value="4" step="0.1">
+        <span class="value-display" id="bump-freq-val">4.0</span>
+      </div>
+      <div class="control-row">
+        <label>Resolution</label>
+        <input type="range" id="surface-res" min="16" max="256" value="128" step="8">
+        <span class="value-display" id="surface-res-val">128</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">📂 Load OBJ Surface</div>
+      <div id="obj-upload-row">
+        <button class="btn" onclick="document.getElementById('obj-file-input').click()">📁 Choose OBJ…</button>
+        <input type="file" id="obj-file-input" accept=".obj">
+      </div>
+      <div id="obj-status">No OBJ loaded — using procedural surface</div>
+      <p class="tip">Load the OBJ output from poisson_caustic_design. The top surface vertices are used directly.</p>
+    </div>
+
+    <div class="section">
+      <div class="section-title">🎨 Appearance</div>
+      <div class="color-row">
+        <label>Caustic Color</label>
+        <input type="color" id="caustic-color" value="#ffe090">
+      </div>
+      <div class="color-row">
+        <label>Ground Color</label>
+        <input type="color" id="ground-color" value="#202028">
+      </div>
+      <div class="color-row">
+        <label>Block Color</label>
+        <input type="color" id="block-color" value="#8ab4d0">
+      </div>
+      <div class="control-row">
+        <label>Show Block</label>
+        <input type="checkbox" id="show-block" checked style="cursor:pointer">
+      </div>
+      <div class="control-row">
+        <label>Show Grid</label>
+        <input type="checkbox" id="show-grid" checked style="cursor:pointer">
+      </div>
+      <div class="control-row">
+        <label>Caustic Map Only</label>
+        <input type="checkbox" id="show-caustic-only" style="cursor:pointer">
+      </div>
+    </div>
+
+  </div><!-- #advanced-sections -->
 </div>
 
 <div id="canvas-container">

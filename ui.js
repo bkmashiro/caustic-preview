@@ -815,6 +815,18 @@ self.addEventListener('message', async (e) => {
 
   drawHemisphere();
 
+  // ─── Advanced toggle ──────────────────────────────────────────────────────
+
+  document.getElementById('btn-advanced').addEventListener('click', () => {
+    const adv = document.getElementById('advanced-sections');
+    const btn = document.getElementById('btn-advanced');
+    const open = adv.style.display === 'none' || adv.style.display === '';
+    adv.style.display = open ? 'block' : 'none';
+    btn.textContent = open ? '⚙ Advanced controls ▲' : '⚙ Advanced controls ▾';
+    // Redraw hemisphere when it becomes visible
+    if (open) drawHemisphere();
+  });
+
   // ─── Keyboard shortcuts ────────────────────────────────────────────────────
 
   document.addEventListener('keydown', e => {
