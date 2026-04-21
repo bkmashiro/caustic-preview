@@ -201,8 +201,9 @@ void main() {
     return;
   }
 
-  // --- Step 3: Refract out of block at bottom (flat bottom, N points DOWN into block = -Y) ---
-  vec3 N_bot = vec3(0.0, -1.0, 0.0); // normal pointing into block medium (downward)
+  // --- Step 3: Refract out of block at bottom ---
+  // N must point from surface INTO the incident medium (glass = upward)
+  vec3 N_bot = vec3(0.0, 1.0, 0.0);
   float eta2 = uIOR / 1.0; // n_block / n_air
   vec3 refracted2 = snellRefract(refracted1, N_bot, eta2);
 
