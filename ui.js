@@ -191,10 +191,23 @@ document.addEventListener('DOMContentLoaded', () => {
     reader.onload = evt => {
       pngFileData = new Uint8Array(evt.target.result);
 
-      // Show thumbnail
+      // Show thumbnail and read natural image size to fix block aspect ratio
       const blob = new Blob([pngFileData], { type: 'image/png' });
       const url  = URL.createObjectURL(blob);
-      imgPreview.onload = () => URL.revokeObjectURL(url);
+      imgPreview.onload = () => {
+        URL.revokeObjectURL(url);
+        // Match block W:D ratio to image W:H so caustic pattern isn't stretched
+        const imgW = imgPreview.naturalWidth;
+        const imgH = imgPreview.naturalHeight;
+        if (imgW > 0 && imgH > 0) {
+          const aspect = imgW / imgH;
+          const curW = parseFloat(document.getElementById('block-w').value);
+          const newD = +(curW / aspect).toFixed(2);
+          const dSlider = document.getElementById('block-d');
+          dSlider.value = Math.max(0.5, Math.min(4, newD));
+          dSlider.dispatchEvent(new Event('input'));
+        }
+      };
       imgPreview.src = url;
       imgPreviewWrap.classList.add('has-image');
 

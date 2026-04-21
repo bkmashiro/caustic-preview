@@ -29,7 +29,8 @@ const CausticRenderer = (() => {
   let progCompute, progDisplay, progScene, progGround, progGrid, progBlit;
 
   // Geometry buffers
-  let surfaceVAO, surfaceVBO; // surface sample points
+  let surfaceVAO, surfaceVBO, surfaceIBO; // surface sample points + triangle index buffer
+  let surfaceTriCount = 0;
   let quadVAO; // fullscreen quad
   let blockVAO, blockIBO, blockVertCount; // block mesh
   let groundVAO; // ground quad
@@ -143,7 +144,6 @@ uniform float uBlockD;        // block full depth Z
 // Caustic texture covers world XZ in range [-uGroundHalf, +uGroundHalf]
 uniform float uGroundHalf;    // half-size of the ground region mapped to [0,1] UV
 
-uniform float uSpread;
 uniform float uIntensity;
 
 out float vIntensity;
@@ -244,7 +244,6 @@ void main() {
   vec2 clip = uv * 2.0 - 1.0;
 
   gl_Position = vec4(clip, 0.0, 1.0);
-  gl_PointSize = uSpread;
   vIntensity = uIntensity;
 }
 `;
@@ -255,11 +254,9 @@ in float vIntensity;
 out vec4 fragColor;
 
 void main() {
-  // Soft disk falloff
-  vec2 pc = gl_PointCoord - 0.5;
-  float d = length(pc) * 2.0;
-  float alpha = max(0.0, 1.0 - d * d);
-  float energy = alpha * vIntensity * 0.008;
+  // Each fragment covers exactly its triangle's area on the caustic FBO.
+  // Focused areas (many small triangles per pixel) accumulate more energy — correct.
+  float energy = vIntensity * 0.005;
   fragColor = vec4(energy, energy, energy, energy);
 }
 `;
@@ -533,10 +530,26 @@ void main() {
     surfaceGridW = gridW;
     surfaceGridH = gridH;
 
+    // Build triangle index buffer for the grid
+    const indices = new Uint32Array((gridW - 1) * (gridH - 1) * 6);
+    let idx = 0;
+    for (let j = 0; j < gridH - 1; j++) {
+      for (let i = 0; i < gridW - 1; i++) {
+        const a = j * gridW + i;
+        const b = a + 1;
+        const c = a + gridW;
+        const d = c + 1;
+        indices[idx++] = a; indices[idx++] = b; indices[idx++] = d;
+        indices[idx++] = a; indices[idx++] = d; indices[idx++] = c;
+      }
+    }
+    surfaceTriCount = idx;
+
     // Upload to GPU
     if (!surfaceVAO) {
       surfaceVAO = gl.createVertexArray();
       surfaceVBO = [gl.createBuffer(), gl.createBuffer()];
+      surfaceIBO = gl.createBuffer();
     }
     gl.bindVertexArray(surfaceVAO);
 
@@ -549,6 +562,9 @@ void main() {
     gl.bufferData(gl.ARRAY_BUFFER, normals, gl.DYNAMIC_DRAW);
     gl.enableVertexAttribArray(1);
     gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, surfaceIBO);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.DYNAMIC_DRAW);
 
     gl.bindVertexArray(null);
 
@@ -801,17 +817,13 @@ void main() {
     gl.uniform1f(ul(progCompute, 'uBlockW'), params.blockW);
     gl.uniform1f(ul(progCompute, 'uBlockD'), params.blockD);
     gl.uniform1f(ul(progCompute, 'uGroundHalf'), groundSize / 2);
-    // Scale intensity & spread so fewer points (OBJ) produce same brightness/coverage
-    // as the sinusoidal reference (128×128 = 16384 pts)
+    // Triangle rasterization: GPU linearly interpolates ground-hit positions
+    // between vertices → continuous coverage, no gaps. No spread/ptScale needed.
     const numPts = surfaceGridW * surfaceGridH;
-    const refPts = 128 * 128;
-    const ptScale     = refPts / Math.max(numPts, 1);          // linear  → same total energy
-    const spreadScale = Math.sqrt(refPts / Math.max(numPts, 1)); // sqrt   → fills gaps between points
-    gl.uniform1f(ul(progCompute, 'uIntensity'), params.intensity * ptScale);
-    gl.uniform1f(ul(progCompute, 'uSpread'),    params.spread    * spreadScale);
+    gl.uniform1f(ul(progCompute, 'uIntensity'), params.intensity);
 
     gl.bindVertexArray(surfaceVAO);
-    gl.drawArrays(gl.POINTS, 0, numPts);
+    gl.drawElements(gl.TRIANGLES, surfaceTriCount, gl.UNSIGNED_INT, 0);
     gl.bindVertexArray(null);
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
