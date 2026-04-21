@@ -18,12 +18,18 @@ const CausticRenderer = (() => {
   let gl, canvas;
 
   // Shader programs
-  let progScene, progGround;
+  let progScene, progGround, progCaustic;
 
   // Geometry buffers
   let quadVAO;          // fullscreen quad (also used as groundVAO)
   let groundVAO;
   let blockVAO, blockIBO, blockVertCount;
+  let emptyVAO;         // attribute-less VAO for instanced splat draw
+
+  // Caustic FBO (forward splat accumulation)
+  let causticFBO = null;
+  let causticTex = null;
+  const CAUSTIC_W = 512, CAUSTIC_H = 512;
 
   // Surface texture (RGBA32F: nx, ny, nz, heightOff)
   let surfaceTex = null;
@@ -153,18 +159,7 @@ precision highp float;
 in vec2 vUV;
 in vec3 vWorldPos;
 
-uniform sampler2D uSurfTex;   // RGBA32F: (nx, ny, nz, heightOff from blockTop)
-uniform bool  uUseSurfTex;    // true when OBJ mode loaded
-uniform int   uSurfMode;      // 0=sinusoidal,1=concentric,2=diagonal,3=random,4=flat
-uniform float uBumpAmp;
-uniform float uBumpFreq;
-uniform float uBlockTop;      // world Y of block top flat reference
-uniform float uBlockBottom;   // world Y of block bottom
-uniform float uGroundY;       // world Y of ground (=0)
-uniform float uBlockW;
-uniform float uBlockD;
-uniform float uIOR;
-uniform float uSigma;         // caustic kernel softness (world units)
+uniform sampler2D uCausticTex; // R32F: accumulated caustic splats
 uniform float uIntensity;
 uniform float uExposure;
 uniform vec3  uLightDir;
@@ -175,113 +170,14 @@ uniform bool  uShowCausticOnly;
 
 out vec4 fragColor;
 
-vec3 snellRefract(vec3 I, vec3 N, float eta) {
-  float cosI = -dot(N, I);
-  float sin2T = eta * eta * (1.0 - cosI * cosI);
-  if (sin2T > 1.0) return vec3(0.0);
-  return eta * I + (eta * cosI - sqrt(1.0 - sin2T)) * N;
-}
-
-float procH(float x, float z) {
-  float a = uBumpAmp, f = uBumpFreq;
-  if (uSurfMode == 0) return a * sin(x*f) * cos(z*f);
-  if (uSurfMode == 1) { float r = sqrt(x*x+z*z); return a * cos(r*f*1.5); }
-  if (uSurfMode == 2) return a * sin((x+z)*f*0.7071);
-  if (uSurfMode == 3) {
-    float px=x*f*0.3, pz=z*f*0.3;
-    float h = sin(px*2.1+1.3)*cos(pz*1.7+0.8)
-            + sin(px*4.3+2.1)*cos(pz*3.9+1.4)*0.5
-            + sin(px*8.7+0.5)*cos(pz*7.3+2.0)*0.25;
-    return a * h / 1.75;
-  }
-  return 0.0;
-}
-
-float getH(vec2 xz) {
-  if (uUseSurfTex) {
-    vec2 uv = xz / vec2(uBlockW, uBlockD) + 0.5;
-    return texture(uSurfTex, uv).a;
-  }
-  return procH(xz.x, xz.y);
-}
-
-vec3 getNorm(vec2 xz) {
-  if (uUseSurfTex) {
-    vec2 uv = xz / vec2(uBlockW, uBlockD) + 0.5;
-    return normalize(texture(uSurfTex, uv).rgb);
-  }
-  float eps = min(uBlockW, uBlockD) * 0.005;
-  float hL = procH(xz.x-eps, xz.y), hR = procH(xz.x+eps, xz.y);
-  float hD = procH(xz.x, xz.y-eps), hU = procH(xz.x, xz.y+eps);
-  return normalize(vec3(-(hR-hL)/(2.0*eps), 1.0, -(hU-hD)/(2.0*eps)));
-}
-
-float computeCaustic(vec3 P) {
-  vec3 L  = normalize(uLightDir);   // downward toward surface
-  vec3 Rb = -L;                      // backward (upward toward light)
-
-  // 1. Hit block bottom from below (ground->block bottom)
-  if (abs(Rb.y) < 1e-6) return 0.0;
-  float t1 = (uBlockBottom - P.y) / Rb.y;
-  if (t1 < 0.0) return 0.0;
-  vec3 B = P + t1 * Rb;
-  if (abs(B.x) > uBlockW * 0.5 + 0.01 || abs(B.z) > uBlockD * 0.5 + 0.01) return 0.0;
-
-  // 2. Backward refract at block bottom (air->glass going upward)
-  //    N must point into incident medium (air, below block) = downward = (0,-1,0)
-  vec3 dg = snellRefract(Rb, vec3(0.0, -1.0, 0.0), 1.0 / uIOR);
-  if (length(dg) < 0.01) return 0.0;
-  dg = normalize(dg);
-
-  // 3. Trace inside glass upward to block top (flat reference plane)
-  if (abs(dg.y) < 1e-6) return 0.0;
-  float t2 = (uBlockTop - B.y) / dg.y;
-  if (t2 < 0.0) return 0.0;
-  vec3 T = B + t2 * dg;
-  if (abs(T.x) > uBlockW * 0.5 + 0.01 || abs(T.z) > uBlockD * 0.5 + 0.01) return 0.0;
-
-  // 4. Sample actual surface at T (height + normal)
-  vec2 txz = T.xz;
-  float h   = getH(txz);
-  vec3  Nt  = getNorm(txz);
-  float topY = uBlockTop + h;
-
-  // 5. Forward refract at top: air->glass using actual surface normal
-  vec3 D1 = snellRefract(L, Nt, 1.0 / uIOR);
-  if (length(D1) < 0.01) return 0.0;
-  D1 = normalize(D1);
-
-  // 6. Trace D1 downward from top to block bottom
-  if (abs(D1.y) < 1e-6) return 0.0;
-  float t3 = (uBlockBottom - topY) / D1.y;
-  if (t3 < 0.0) return 0.0;
-  vec3 B2 = vec3(txz.x, topY, txz.y) + t3 * D1;
-
-  // 7. Refract at block bottom: glass->air (N into glass = upward = (0,1,0))
-  vec3 D2 = snellRefract(D1, vec3(0.0, 1.0, 0.0), uIOR);
-  if (length(D2) < 0.01) return 0.0;
-  D2 = normalize(D2);
-
-  // 8. Trace to ground plane
-  if (abs(D2.y) < 1e-6) return 0.0;
-  float t4 = (uGroundY - B2.y) / D2.y;
-  if (t4 < 0.0) return 0.0;
-  vec3 gHit = B2 + t4 * D2;
-
-  // 9. Gaussian kernel: brightness proportional to how close gHit is to P
-  vec2 diff   = gHit.xz - P.xz;
-  float sigma2 = uSigma * uSigma;
-  return exp(-dot(diff, diff) / (2.0 * sigma2));
-}
-
 float gridLine(vec2 p, float size) {
   vec2 g = abs(fract(p / size - 0.5) - 0.5) / fwidth(p / size);
   return 1.0 - min(min(g.x, g.y), 1.0);
 }
 
 void main() {
-  float caustic = computeCaustic(vWorldPos) * uIntensity;
-  caustic = 1.0 - exp(-caustic * uExposure);
+  float causticRaw = texture(uCausticTex, vUV).r;
+  float caustic    = 1.0 - exp(-causticRaw * uIntensity * uExposure);
 
   vec3 col;
   if (uShowCausticOnly) {
@@ -351,6 +247,111 @@ void main() {
 }
 `;
 
+  // Forward splat shaders: for each surface grid point, compute where light
+  // lands on the ground (forward ray trace) and draw a Gaussian quad there.
+  // Rendered into an R32F FBO with additive blending — no gaps possible.
+  const VS_CAUSTIC = `#version 300 es
+precision highp float;
+
+uniform sampler2D uSurfTex;  // RGBA32F: nx,ny,nz,heightOff
+uniform int   uSurfW;
+uniform int   uSurfH;
+uniform float uBlockW;
+uniform float uBlockD;
+uniform float uBlockTop;
+uniform float uBlockBottom;
+uniform float uGroundY;
+uniform float uIOR;
+uniform vec3  uLightDir;
+uniform float uSplatR;      // splat half-size in world units
+uniform float uGroundHalf;  // ground coverage half-size for NDC mapping
+
+out vec2 vOff;  // normalized offset [-1,1] within splat for Gaussian in FS
+
+vec3 snell(vec3 I, vec3 N, float eta) {
+  float cosI  = -dot(N, I);
+  float sin2T = eta * eta * (1.0 - cosI * cosI);
+  if (sin2T > 1.0) return vec3(0.0);
+  return eta * I + (eta * cosI - sqrt(1.0 - sin2T)) * N;
+}
+
+void main() {
+  int idx    = gl_VertexID / 6;
+  int corner = gl_VertexID % 6;
+
+  int si = idx % uSurfW;
+  int sj = idx / uSurfW;
+
+  if (sj >= uSurfH) {
+    gl_Position = vec4(2.0, 0.0, 0.0, 1.0);
+    vOff = vec2(2.0);
+    return;
+  }
+
+  // Sample surface texture
+  vec2 uv = (vec2(float(si), float(sj)) + 0.5) / vec2(float(uSurfW), float(uSurfH));
+  vec4 sd  = texture(uSurfTex, uv);
+  vec3 Nt  = length(sd.rgb) > 0.01 ? normalize(sd.rgb) : vec3(0.0, 1.0, 0.0);
+  float h  = sd.a;
+
+  // World position of this surface point
+  float wx = (float(si) / float(uSurfW - 1) - 0.5) * uBlockW;
+  float wz = (float(sj) / float(uSurfH - 1) - 0.5) * uBlockD;
+  float wy = uBlockTop + h;
+
+  vec3 L = normalize(uLightDir);
+
+  // Step 1: Refract at top surface — air → glass
+  // N pointing into incident medium (air, above) = Nt (surface normal, upward)
+  vec3 D1 = snell(L, Nt, 1.0 / uIOR);
+  if (length(D1) < 0.01 || D1.y >= 0.0) {
+    gl_Position = vec4(2.0, 0.0, 0.0, 1.0); vOff = vec2(2.0); return;
+  }
+  D1 = normalize(D1);
+
+  // Step 2: Trace to block bottom
+  float t1 = (uBlockBottom - wy) / D1.y;
+  if (t1 < 0.0) { gl_Position = vec4(2.0,0.0,0.0,1.0); vOff=vec2(2.0); return; }
+  vec3 B = vec3(wx, wy, wz) + t1 * D1;
+
+  // Step 3: Refract at block bottom — glass → air
+  // N pointing into incident medium (glass, above) = (0,1,0)
+  vec3 D2 = snell(D1, vec3(0.0, 1.0, 0.0), uIOR);
+  if (length(D2) < 0.01 || D2.y >= 0.0) {
+    gl_Position = vec4(2.0,0.0,0.0,1.0); vOff=vec2(2.0); return;
+  }
+  D2 = normalize(D2);
+
+  // Step 4: Trace to ground
+  float t2 = (uGroundY - B.y) / D2.y;
+  if (t2 < 0.0) { gl_Position = vec4(2.0,0.0,0.0,1.0); vOff=vec2(2.0); return; }
+  vec2 gHit = B.xz + t2 * D2.xz;
+
+  // Quad corners (2 triangles, CCW)
+  float cx = (corner == 1 || corner == 2 || corner == 4) ?  1.0 : -1.0;
+  float cz = (corner == 2 || corner == 4 || corner == 5) ?  1.0 : -1.0;
+  vOff = vec2(cx, cz);
+
+  // Map gHit world XZ → FBO NDC, add corner offset
+  vec2 ndc = gHit / uGroundHalf
+           + vec2(cx, cz) * (uSplatR / uGroundHalf);
+  gl_Position = vec4(ndc, 0.0, 1.0);
+}
+`;
+
+  const FS_CAUSTIC = `#version 300 es
+precision highp float;
+in  vec2 vOff;
+out vec4 fragColor;
+
+void main() {
+  float d2 = dot(vOff, vOff);   // 0 at center, 2 at corners
+  if (d2 > 2.0) discard;
+  float w  = exp(-d2 * 2.0);    // Gaussian: 1 at center, ~0.02 at corners
+  fragColor = vec4(w, 0.0, 0.0, 0.0);
+}
+`;
+
   // ─── GL Utilities ──────────────────────────────────────────────────────────
 
   function createShader(type, src) {
@@ -403,6 +404,31 @@ void main() {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+  }
+
+  // ─── Caustic FBO ─────────────────────────────────────────────────────────
+
+  function buildCausticFBO() {
+    if (causticFBO) {
+      gl.deleteFramebuffer(causticFBO);
+      gl.deleteTexture(causticTex);
+    }
+    causticTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, causticTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, CAUSTIC_W, CAUSTIC_H, 0, gl.RED, gl.FLOAT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    causticFBO = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, causticFBO);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, causticTex, 0);
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (status !== gl.FRAMEBUFFER_COMPLETE) {
+      console.error('Caustic FBO incomplete:', status);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.bindTexture(gl.TEXTURE_2D, null);
   }
 
@@ -749,53 +775,77 @@ void main() {
     const t0 = performance.now();
 
     const lightDir = getLightDir();
-    const groundY = 0;
+    const groundY  = 0;
     const blockBottom = params.groundDist;
-    const blockTop = params.groundDist + params.blockH;
-    const groundSize = Math.max(params.blockW, params.blockD) * 5;
+    const blockTop    = params.groundDist + params.blockH;
+    const groundSize  = Math.max(params.blockW, params.blockD) * 5;
+    const groundHalf  = groundSize / 2;
+
+    // Adaptive splat radius: wide enough to fill grid gaps, min = sigma
+    const gridSpacing = params.blockW / Math.max(surfaceGridW - 1, 1);
+    const splatR = Math.max(params.sigma, gridSpacing * 1.5);
 
     const W = canvas.width, H = canvas.height;
+
+    // ── Pass 0: Caustic forward-splat into R32F FBO ───────────────────────
+    if (surfaceTex) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, causticFBO);
+      gl.viewport(0, 0, CAUSTIC_W, CAUSTIC_H);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.disable(gl.DEPTH_TEST);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE); // additive
+
+      gl.useProgram(progCaustic);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, surfaceTex);
+      gl.uniform1i(ul(progCaustic, 'uSurfTex'),    0);
+      gl.uniform1i(ul(progCaustic, 'uSurfW'),      surfaceGridW);
+      gl.uniform1i(ul(progCaustic, 'uSurfH'),      surfaceGridH);
+      gl.uniform1f(ul(progCaustic, 'uBlockW'),     params.blockW);
+      gl.uniform1f(ul(progCaustic, 'uBlockD'),     params.blockD);
+      gl.uniform1f(ul(progCaustic, 'uBlockTop'),   blockTop);
+      gl.uniform1f(ul(progCaustic, 'uBlockBottom'),blockBottom);
+      gl.uniform1f(ul(progCaustic, 'uGroundY'),    groundY);
+      gl.uniform1f(ul(progCaustic, 'uIOR'),        params.ior);
+      gl.uniform3fv(ul(progCaustic, 'uLightDir'),  lightDir);
+      gl.uniform1f(ul(progCaustic, 'uSplatR'),     splatR);
+      gl.uniform1f(ul(progCaustic, 'uGroundHalf'), groundHalf);
+
+      gl.bindVertexArray(emptyVAO);
+      gl.drawArrays(gl.TRIANGLES, 0, surfaceGridW * surfaceGridH * 6);
+      gl.bindVertexArray(null);
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.disable(gl.BLEND);
+    }
+
+    // ── Pass 1: Ground plane (samples causticTex) ─────────────────────────
+    const model  = mat4.identity();
+    const mvp    = getMVP(model);
+    const cameraPos = getCameraPos();
+
     gl.viewport(0, 0, W, H);
     gl.clearColor(0.05, 0.05, 0.08, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.enable(gl.DEPTH_TEST);
     gl.disable(gl.BLEND);
 
-    const model = mat4.identity();
-    const mvp = getMVP(model);
-    const cameraPos = getCameraPos();
-
-    // Surface mode index for procedural modes
-    const SURF_MODES = ['sinusoidal','concentric','diagonal','random','flat','obj'];
-
-    // ── Pass 1: Ground plane with per-pixel backward ray tracing ─────────
     gl.useProgram(progGround);
-
-    // Bind surface texture to TEXTURE0
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, surfaceTex);
-    gl.uniform1i(ul(progGround, 'uSurfTex'), 0);
-    gl.uniform1i(ul(progGround, 'uUseSurfTex'), (params.surfaceMode === 'obj' && surfaceTex) ? 1 : 0);
-    gl.uniform1i(ul(progGround, 'uSurfMode'), SURF_MODES.indexOf(params.surfaceMode));
-    gl.uniform1f(ul(progGround, 'uBumpAmp'),     params.bumpAmp);
-    gl.uniform1f(ul(progGround, 'uBumpFreq'),    params.bumpFreq);
-    gl.uniform1f(ul(progGround, 'uBlockTop'),    blockTop);
-    gl.uniform1f(ul(progGround, 'uBlockBottom'), blockBottom);
-    gl.uniform1f(ul(progGround, 'uGroundY'),     groundY);
-    gl.uniform1f(ul(progGround, 'uBlockW'),      params.blockW);
-    gl.uniform1f(ul(progGround, 'uBlockD'),      params.blockD);
-    gl.uniform1f(ul(progGround, 'uIOR'),         params.ior);
-    gl.uniform1f(ul(progGround, 'uSigma'),       params.sigma);
-    gl.uniform1f(ul(progGround, 'uIntensity'),   params.intensity);
-    gl.uniform1f(ul(progGround, 'uExposure'),    params.exposure);
-    gl.uniform3fv(ul(progGround, 'uLightDir'),   lightDir);
-    gl.uniform3fv(ul(progGround, 'uCausticColor'), params.causticColor);
-    gl.uniform3fv(ul(progGround, 'uGroundColor'),  params.groundColor);
-    gl.uniform1i(ul(progGround, 'uShowGrid'),        params.showGrid ? 1 : 0);
-    gl.uniform1i(ul(progGround, 'uShowCausticOnly'), params.showCausticOnly ? 1 : 0);
-    gl.uniform3fv(ul(progGround, 'uGroundCorner'), [-groundSize/2, groundY, -groundSize/2]);
-    gl.uniform2fv(ul(progGround, 'uGroundSize'),   [groundSize, groundSize]);
-    gl.uniform1f(ul(progGround, 'uGroundHalf'),    groundSize / 2);
+    gl.bindTexture(gl.TEXTURE_2D, causticTex);
+    gl.uniform1i(ul(progGround, 'uCausticTex'),      0);
+    gl.uniform1f(ul(progGround, 'uIntensity'),        params.intensity);
+    gl.uniform1f(ul(progGround, 'uExposure'),         params.exposure);
+    gl.uniform3fv(ul(progGround, 'uLightDir'),        lightDir);
+    gl.uniform3fv(ul(progGround, 'uCausticColor'),    params.causticColor);
+    gl.uniform3fv(ul(progGround, 'uGroundColor'),     params.groundColor);
+    gl.uniform1i(ul(progGround, 'uShowGrid'),         params.showGrid ? 1 : 0);
+    gl.uniform1i(ul(progGround, 'uShowCausticOnly'),  params.showCausticOnly ? 1 : 0);
+    gl.uniform3fv(ul(progGround, 'uGroundCorner'),    [-groundHalf, groundY, -groundHalf]);
+    gl.uniform2fv(ul(progGround, 'uGroundSize'),      [groundSize, groundSize]);
+    gl.uniform1f(ul(progGround, 'uGroundHalf'),       groundHalf);
     gl.uniformMatrix4fv(ul(progGround, 'uMVP'), false, mvp);
 
     gl.bindVertexArray(groundVAO);
@@ -1063,22 +1113,27 @@ void main() {
       return;
     }
 
-    // Need EXT_color_buffer_float for RGBA32F render targets (surfaceTex sampling)
+    // EXT_color_buffer_float: needed for R32F and RGBA32F render targets
     gl.getExtension('EXT_color_buffer_float');
 
-    // Request OES_texture_float_linear for smooth surface texture filtering
+    // OES_texture_float_linear: smooth filtering of float textures
     const floatLinExt = gl.getExtension('OES_texture_float_linear');
     floatLinearSupported = !!floatLinExt;
 
-    // Compile only needed programs
     try {
-      progScene  = createProgram(VS_SCENE, FS_SCENE);
-      progGround = createProgram(VS_GROUND, FS_GROUND);
+      progScene   = createProgram(VS_SCENE,   FS_SCENE);
+      progGround  = createProgram(VS_GROUND,  FS_GROUND);
+      progCaustic = createProgram(VS_CAUSTIC, FS_CAUSTIC);
     } catch(e) {
       console.error(e);
       alert('Shader compilation failed:\n' + e.message);
       return;
     }
+
+    buildCausticFBO();
+
+    // Attribute-less VAO for the caustic splat draw (uses only gl_VertexID)
+    emptyVAO = gl.createVertexArray();
 
     buildQuad();
     buildSurface();
