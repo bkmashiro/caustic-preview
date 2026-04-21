@@ -289,12 +289,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const resW         = preset.resW;
 
     // Three-input physical model:
-    //   focalL    = baseMm / lensSize       → air gap (glass exit → ground), normalized
-    //   thickness = lensMm / lensSize       → glass depth (curved entry surface), normalized
-    // Table-on-ground: glass exit surface at groundDist - thickness*blockW; focal plane = ground.
-    // groundDist = (base + lensDepth) / lensSize * blockW  (lens top to ground = total path)
-    // blockH     = thickness * blockW + small margin        (just the glass, not the air gap)
-    const focalL    = +(baseMm / lensSize).toFixed(4);
+    //   focalL    = (base + lensDepth) / lensSize   → total height normalized
+    //   thickness = lensDepth / lensSize             → only the curved part
+    // Table-on-ground: light exits at bottom, focal plane = table surface.
+    // groundDist = focalL * blockW  (lens top to table = total glass height)
+    // blockH     = focalL * blockW  (same: full block height)
+    const focalL    = +((baseMm + lensMm) / lensSize).toFixed(4);
     const thickness = +(lensMm / lensSize).toFixed(4);
 
     // Write to hidden inputs (used by generate handler)
@@ -554,50 +554,52 @@ self.addEventListener('message', async (e) => {
         setProgress(90);
         // Load the OBJ into the WebGL renderer
         try {
-          // focalL    = baseMm / lensSize      (air gap, normalized)
-          // thickness = lensMm / lensSize      (glass depth, normalized)
-          // groundDist = (base + depth) / lensSize * blockW  (glass top → ground, full optical path)
-          // blockH     = thickness * blockW + margin          (just the glass, not the air gap)
+          // Three-input model:
+          //   focalL    = (base + lensDepth) / lensSize  (total glass height normalized)
+          //   thickness = lensDepth / lensSize            (curved part only)
+          // blockH = groundDist = focalL * blockW  (total height = focal distance for table mode)
           const bW = parseFloat(document.getElementById('block-w').value);
 
-          // groundDist: total distance from glass top surface to ground (air gap + glass depth)
-          const totalNorm    = focalL + thickness;   // = (baseMm + lensMm) / lensSize
-          const groundDistVal = +(totalNorm * bW).toFixed(2);
-
-          // blockH: just the glass block (lens curvature depth + small margin)
-          // requiredBlockH from OBJ will refine this after parsing
-          const minSafeH    = +(thickness * bW + 0.05).toFixed(2);
+          // Pre-add a small margin so the lens curve never clips below blockBottom
+          // on first load (parseCausticOBJ clamps vertices to blockBottom, so if
+          // blockH < requiredBlockH the mesh is silently truncated).
+          const nominalH = focalL * bW;
+          const minSafeH = thickness * bW + 0.05; // lens curve + margin
+          const targetBlockH = +(Math.max(nominalH, minSafeH)).toFixed(2);
 
           const bhSlider = document.getElementById('block-h');
           const gdSlider = document.getElementById('ground-dist');
           const gySlider = document.getElementById('ground-y');
 
-          // groundDist is now independent of blockH
-          gdSlider.value = Math.max(0.1, Math.min(12, groundDistVal));
-          gdSlider.dispatchEvent(new Event('input'));
+          // Small gap between lens bottom and floor to avoid z-fighting
+          const GAP = 0.01;
 
-          // Set initial blockH (glass only)
-          bhSlider.value = Math.max(0.1, Math.min(8, minSafeH));
-          bhSlider.dispatchEvent(new Event('input'));
+          function applyBlockH(h) {
+            const clamped = Math.max(0.1, Math.min(8, h));
+            bhSlider.value = clamped;
+            bhSlider.dispatchEvent(new Event('input'));
+            // groundDist = blockH + GAP so lens bottom sits just above floor
+            const gd = Math.max(0.1, Math.min(12, h + GAP));
+            gdSlider.value = gd;
+            gdSlider.dispatchEvent(new Event('input'));
+          }
 
-          // Pass lensThicknessNorm so the renderer knows where the glass exit surface is
-          app.setParam('lensThicknessNorm', thickness);
-
-          // groundY = -0.05 avoids z-fighting between lens bottom and ground
-          gySlider.value = -0.05;
+          // groundY = 0 (table surface at Y = 0)
+          gySlider.value = 0;
           gySlider.dispatchEvent(new Event('input'));
 
-          // Load OBJ
+          // Apply initial dimensions, then load OBJ
+          applyBlockH(targetBlockH);
           const loadInfo = app.loadCausticOBJ(objText);
           lastGeneratedObjText = objText;
           if (btnDownloadObj) btnDownloadObj.disabled = false;
 
-          // If solver lens curve is deeper than minSafeH, increase blockH to fit
-          let finalBlockH = minSafeH;
-          if (loadInfo && loadInfo.requiredBlockH > minSafeH) {
+          // If solver overshot the nominal thickness, bump blockH + groundDist
+          // and reload OBJ with the corrected params so nothing is clamped.
+          let finalBlockH = targetBlockH;
+          if (loadInfo && loadInfo.requiredBlockH > targetBlockH) {
             finalBlockH = +(loadInfo.requiredBlockH + 0.02).toFixed(2);
-            bhSlider.value = Math.max(0.1, Math.min(8, finalBlockH));
-            bhSlider.dispatchEvent(new Event('input'));
+            applyBlockH(finalBlockH);
             app.loadCausticOBJ(objText); // re-parse with corrected blockH
           }
 
@@ -605,7 +607,7 @@ self.addEventListener('message', async (e) => {
           app.setCameraPreset('top');
 
           setProgress(100);
-          setWasmStatus(`Done — blockH: ${finalBlockH.toFixed(2)}, groundDist: ${groundDistVal.toFixed(2)}`);
+          setWasmStatus(`Done — blockH: ${finalBlockH.toFixed(2)}, groundDist: ${finalBlockH.toFixed(2)}`);
         } catch (err) {
           setWasmStatus('OBJ parse error: ' + err.message, true);
         }
