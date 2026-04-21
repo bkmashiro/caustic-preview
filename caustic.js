@@ -41,7 +41,7 @@ const CausticRenderer = (() => {
     azimuth: 45,
     elevation: 45,
     intensity: 3.0,
-    ior: 1.5,
+    ior: 1.62,
     exposure: 4.0,
     spread: 0.0,
     sigma: 0.05,
