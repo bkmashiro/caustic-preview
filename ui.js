@@ -646,7 +646,7 @@ self.addEventListener('message', async (e) => {
 
   // Update info bar
   document.getElementById('info-bar').textContent =
-    'Drag to orbit · Scroll to zoom · Right-drag to pan · Keys: 1/2/3 = views · B = toggle block · G = grid';
+    'Drag to orbit · Scroll to zoom · Right-drag to pan (incl. vertical) · Keys: 1/2/3 = views · B = block · G = grid';
 
   // Fade info bar after 6s
   setTimeout(() => {

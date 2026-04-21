@@ -1178,6 +1178,8 @@ void main() {
     const pts = result.gridW * result.gridH;
     document.getElementById('obj-status').textContent =
       `Loaded: ${pts.toLocaleString()} surface points (${result.gridW}×${result.gridH})`;
+    // Re-center camera on the new geometry
+    setCameraPreset('persp');
     // Return info so ui.js can auto-adjust blockH if needed
     return { requiredBlockH: result.requiredBlockH };
   }
@@ -1264,12 +1266,14 @@ void main() {
       lastY = e.clientY;
 
       if (rightDrag) {
-        // Pan
+        // Pan: move target in camera's right/up plane
         const scale = camera.radius * 0.003;
         const t = camera.theta;
-        camera.target[0] -= (Math.cos(t)*dx + Math.sin(t)*0) * scale;
-        camera.target[2] -= (Math.sin(t)*dx - Math.cos(t)*0) * scale;
-        camera.target[1] += dy * scale;
+        // Horizontal pan along ground plane (rotate with camera azimuth)
+        camera.target[0] -= Math.cos(t) * dx * scale;
+        camera.target[2] -= Math.sin(t) * dx * scale;
+        // Vertical pan: drag down → look down (target Y decreases)
+        camera.target[1] -= dy * scale;
       } else {
         // Orbit
         camera.theta -= dx * 0.007;
@@ -1335,21 +1339,25 @@ void main() {
   }
 
   function setCameraPreset(preset) {
+    // Centre the view vertically between ground (0) and block top (groundDist)
+    const midY = params.groundDist * 0.4;
+    const sceneR = Math.max(params.blockW, params.blockD, params.groundDist) * 1.8;
+
     if (preset === 'top') {
       camera.phi = Math.PI / 2 - 0.01;
       camera.theta = 0;
-      camera.radius = 7;
-      camera.target = [0, 0, 0];
+      camera.radius = sceneR * 1.2;
+      camera.target = [0, midY, 0];
     } else if (preset === 'side') {
-      camera.phi = 0.1;
+      camera.phi = 0.08;
       camera.theta = 0;
-      camera.radius = 6;
-      camera.target = [0, 0.5, 0];
+      camera.radius = sceneR * 1.4;
+      camera.target = [0, midY, 0];
     } else {
-      camera.phi = 0.8;
+      camera.phi = 0.75;
       camera.theta = 0.6;
-      camera.radius = 6;
-      camera.target = [0, 0.2, 0];
+      camera.radius = sceneR * 1.3;
+      camera.target = [0, midY, 0];
     }
   }
 
