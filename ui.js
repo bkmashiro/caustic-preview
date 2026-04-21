@@ -278,8 +278,16 @@ self.addEventListener('message', async (e) => {
       // callMain throws ExitStatus on normal program exit — catch and ignore it,
       // then continue to read the output file.
       try { mod.callMain(args); } catch(e) {
-        if (e && e.name !== 'ExitStatus' && !(e.message && e.message.includes('exit'))) throw e;
+        // ExitStatus is normal — program finished. Any other exception is real.
+        const isExit = (e && (e.name === 'ExitStatus' || (e.message && e.message.toLowerCase().includes('exit'))));
+        self.postMessage({ type: 'status', text: 'Solver exited: ' + (isExit ? 'OK (exit code)' : 'ERROR: ' + (e && e.message)) });
+        if (!isExit) throw e;
       }
+
+      // Check what files are in root FS
+      let fsRoot = [];
+      try { fsRoot = mod.FS.readdir('/'); } catch(_) {}
+      self.postMessage({ type: 'status', text: 'FS root: ' + JSON.stringify(fsRoot) });
 
       self.postMessage({ type: 'status', text: 'Reading output mesh…' });
       const objText = mod.FS.readFile('/output.obj', { encoding: 'utf8' });
