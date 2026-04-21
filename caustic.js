@@ -49,6 +49,7 @@ const CausticRenderer = (() => {
     blockD: 2.0,
     blockH: 0.4,
     groundDist: 2.0,  // = lens top surface to ground (optical focal distance)
+    groundY: 0.0,     // Y position of the ground plane (move down to create gap)
     surfaceMode: 'sinusoidal',
     bumpAmp: 0.05,
     bumpFreq: 4.0,
@@ -844,7 +845,7 @@ void main() {
     const t0 = performance.now();
 
     const lightDir = getLightDir();
-    const groundY  = 0;
+    const groundY  = params.groundY;
     // groundDist = lens top surface to ground (optical focal distance)
     const blockTop    = params.groundDist;
     const blockBottom = params.groundDist - params.blockH;

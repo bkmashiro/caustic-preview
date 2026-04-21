@@ -36,6 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
   wireSlider('block-d',    'blockD',     1);
   wireSlider('block-h',    'blockH',     1);
   wireSlider('ground-dist','groundDist', 1);
+  wireSlider('ground-y',   'groundY',   2);
   wireSlider('bump-amp',   'bumpAmp',    3);
   wireSlider('bump-freq',  'bumpFreq',   1);
   wireSlider('surface-res','surfaceRes', 0);
