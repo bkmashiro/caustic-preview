@@ -160,91 +160,63 @@ vec3 snellRefract(vec3 I, vec3 N, float eta) {
 }
 
 void main() {
+  // With triangle rasterization, we can't use early-return discard (vec4(10,10,10,1))
+  // because that vertex gets interpolated and stretches the triangle to infinity.
+  // Instead: track validity, map invalid vertices to (0,0) with vIntensity=0
+  // so the triangle is rasterized but contributes zero energy.
+
+  float valid = 1.0;
+  vec2 clip = vec2(0.0);
+
   // --- Step 1: Refract into block at top surface ---
-  vec3 N_top = normalize(aSurfNorm); // points upward (into air)
-  vec3 I = normalize(uLightDir);     // incident ray direction (downward)
-
-  float eta1 = 1.0 / uIOR; // n_air / n_block
+  vec3 N_top = normalize(aSurfNorm);
+  vec3 I = normalize(uLightDir);
+  float eta1 = 1.0 / uIOR;
   vec3 refracted1 = snellRefract(I, N_top, eta1);
+  if (length(refracted1) < 0.01) valid = 0.0; // TIR
 
-  if (length(refracted1) < 0.01) {
-    // TIR — discard
-    gl_Position = vec4(10.0, 10.0, 10.0, 1.0);
-    gl_PointSize = 0.0;
-    vIntensity = 0.0;
-    return;
-  }
+  if (valid > 0.5) {
+    // --- Step 2: Trace to block bottom ---
+    vec3 pos = aSurfPos;
+    float t1 = (abs(refracted1.y) > 1e-6)
+               ? (uBlockBottom - pos.y) / refracted1.y
+               : -1.0;
+    if (t1 < 0.0) { valid = 0.0; }
 
-  // --- Step 2: Travel to block bottom (flat, normal = +Y, but pointing down into block) ---
-  vec3 pos = aSurfPos;
-  // Ray: pos + t * refracted1, find t where y = uBlockBottom
-  if (abs(refracted1.y) < 1e-6) {
-    gl_Position = vec4(10.0, 10.0, 10.0, 1.0);
-    gl_PointSize = 0.0;
-    vIntensity = 0.0;
-    return;
-  }
-  float t1 = (uBlockBottom - pos.y) / refracted1.y;
-  if (t1 < 0.0) {
-    gl_Position = vec4(10.0, 10.0, 10.0, 1.0);
-    gl_PointSize = 0.0;
-    vIntensity = 0.0;
-    return;
-  }
-  vec3 posBottom = pos + t1 * refracted1;
+    if (valid > 0.5) {
+      vec3 posBottom = pos + t1 * refracted1;
+      if (abs(posBottom.x) > uBlockW * 0.5 + 0.01 ||
+          abs(posBottom.z) > uBlockD * 0.5 + 0.01) valid = 0.0;
 
-  // Check it's still inside the block footprint
-  if (abs(posBottom.x) > uBlockW * 0.5 + 0.01 || abs(posBottom.z) > uBlockD * 0.5 + 0.01) {
-    gl_Position = vec4(10.0, 10.0, 10.0, 1.0);
-    gl_PointSize = 0.0;
-    vIntensity = 0.0;
-    return;
-  }
+      if (valid > 0.5) {
+        // --- Step 3: Refract out of block bottom (N points into glass = up) ---
+        vec3 N_bot = vec3(0.0, 1.0, 0.0);
+        float eta2 = uIOR;
+        vec3 refracted2 = snellRefract(refracted1, N_bot, eta2);
+        if (length(refracted2) < 0.01) valid = 0.0; // TIR at bottom
 
-  // --- Step 3: Refract out of block at bottom ---
-  // N must point from surface INTO the incident medium (glass = upward)
-  vec3 N_bot = vec3(0.0, 1.0, 0.0);
-  float eta2 = uIOR / 1.0; // n_block / n_air
-  vec3 refracted2 = snellRefract(refracted1, N_bot, eta2);
+        if (valid > 0.5) {
+          // --- Step 4: Intersect with ground plane ---
+          float t2 = (abs(refracted2.y) > 1e-6)
+                     ? (uGroundY - posBottom.y) / refracted2.y
+                     : -1.0;
+          if (t2 < 0.0) { valid = 0.0; }
 
-  if (length(refracted2) < 0.01) {
-    // TIR at bottom
-    gl_Position = vec4(10.0, 10.0, 10.0, 1.0);
-    gl_PointSize = 0.0;
-    vIntensity = 0.0;
-    return;
+          if (valid > 0.5) {
+            vec3 groundHit = posBottom + t2 * refracted2;
+            // --- Step 5: Map to caustic FBO clip space ---
+            vec2 uv = groundHit.xz / (uGroundHalf * 2.0) + 0.5;
+            // Mark out-of-range as invalid (zero energy) but keep position in [0,1]
+            if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) valid = 0.0;
+            clip = clamp(uv, 0.0, 1.0) * 2.0 - 1.0;
+          }
+        }
+      }
+    }
   }
-
-  // --- Step 4: Find intersection with ground plane ---
-  if (abs(refracted2.y) < 1e-6) {
-    gl_Position = vec4(10.0, 10.0, 10.0, 1.0);
-    gl_PointSize = 0.0;
-    vIntensity = 0.0;
-    return;
-  }
-  float t2 = (uGroundY - posBottom.y) / refracted2.y;
-  if (t2 < 0.0) {
-    gl_Position = vec4(10.0, 10.0, 10.0, 1.0);
-    gl_PointSize = 0.0;
-    vIntensity = 0.0;
-    return;
-  }
-  vec3 groundHit = posBottom + t2 * refracted2;
-
-  // --- Step 5: Map ground hit to caustic texture UV, then to clip space ---
-  // groundHit.xz in world space; texture covers [-uGroundHalf, +uGroundHalf]
-  vec2 uv = groundHit.xz / (uGroundHalf * 2.0) + 0.5;
-  // Clip any hits outside the mapped region
-  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
-    gl_Position = vec4(10.0, 10.0, 10.0, 1.0);
-    gl_PointSize = 0.0;
-    vIntensity = 0.0;
-    return;
-  }
-  vec2 clip = uv * 2.0 - 1.0;
 
   gl_Position = vec4(clip, 0.0, 1.0);
-  vIntensity = uIntensity;
+  vIntensity = uIntensity * valid; // zero intensity for any invalid vertex
 }
 `;
 
