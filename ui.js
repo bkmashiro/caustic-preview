@@ -117,9 +117,11 @@ document.addEventListener('DOMContentLoaded', () => {
   let pngFileData = null;        // Uint8Array of the uploaded PNG
   let wasmWorker = null;         // active Web Worker (null when idle)
   let causticModuleReady = false;// becomes true once CausticModule is available
+  let lastGeneratedObjText = null; // last successfully generated OBJ text
 
   // UI helpers
   const btnGenerate    = document.getElementById('btn-generate');
+  const btnDownloadObj = document.getElementById('btn-download-obj');
   const progressWrap   = document.getElementById('wasm-progress-wrap');
   const progressBar    = document.getElementById('wasm-progress-bar');
   const wasmStatusEl   = document.getElementById('wasm-status');
@@ -322,7 +324,9 @@ self.addEventListener('message', async (e) => {
         setProgress(90);
         // Load the OBJ into the WebGL renderer
         try {
-          app.loadOBJ(objText);
+          app.loadCausticOBJ(objText);
+          lastGeneratedObjText = objText;
+          if (btnDownloadObj) btnDownloadObj.disabled = false;
           setProgress(100);
           setWasmStatus('Done! Surface loaded into renderer.');
         } catch (err) {
@@ -361,6 +365,21 @@ self.addEventListener('message', async (e) => {
       }
     }
   });
+
+  // ─── Download OBJ button ─────────────────────────────────────────────────
+
+  if (btnDownloadObj) {
+    btnDownloadObj.addEventListener('click', () => {
+      if (!lastGeneratedObjText) return;
+      const blob = new Blob([lastGeneratedObjText], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'caustic.obj';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  }
 
   // ─── Hemisphere light direction UI ────────────────────────────────────────
 

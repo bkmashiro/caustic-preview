@@ -947,6 +947,100 @@ void main() {
     return { positions, normals, gridW, gridH };
   }
 
+  // ─── Caustic OBJ Loader ───────────────────────────────────────────────────
+
+  function parseCausticOBJ(text) {
+    const rawVerts = [];
+    for (const line of text.split('\n')) {
+      const parts = line.trim().split(/\s+/);
+      if (parts[0] === 'v') {
+        rawVerts.push([parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3])]);
+      }
+    }
+
+    if (rawVerts.length === 0) return null;
+
+    // First half = top curved surface (X,Y in [0,1], Z = height deformation ≤ 0)
+    const N = Math.floor(rawVerts.length / 2);
+    const topVerts = rawVerts.slice(0, N);
+
+    // Build grid from unique X and Y values
+    const xSet = [...new Set(topVerts.map(v => Math.round(v[0] * 100000)))].sort((a, b) => a - b);
+    const ySet = [...new Set(topVerts.map(v => Math.round(v[1] * 100000)))].sort((a, b) => a - b);
+    const gridW = xSet.length;
+    const gridH = ySet.length;
+
+    if (gridW < 2 || gridH < 2) return null;
+
+    const { blockW, blockD, blockH } = params;
+
+    const positions = new Float32Array(gridW * gridH * 3);
+    const normals   = new Float32Array(gridW * gridH * 3);
+
+    // Map each vertex into a lookup by (xi, yi) index
+    const vertMap = new Map();
+    for (const v of topVerts) {
+      const xi = Math.round(v[0] * 100000);
+      const yi = Math.round(v[1] * 100000);
+      vertMap.set(`${xi},${yi}`, v);
+    }
+
+    for (let j = 0; j < gridH; j++) {
+      for (let i = 0; i < gridW; i++) {
+        const idx = j * gridW + i;
+        const key = `${xSet[i]},${ySet[j]}`;
+        const v = vertMap.get(key) || [xSet[i] / 100000, ySet[j] / 100000, 0];
+        const obj_x = v[0];
+        const obj_y = v[1];
+        const obj_z = v[2]; // negative height deformation
+
+        // Map to renderer coordinates
+        positions[idx*3+0] = (obj_x - 0.5) * blockW;          // center at origin, scale to block width
+        positions[idx*3+1] = blockH / 2 + obj_z * blockW;     // Z deformation → Y displacement
+        positions[idx*3+2] = (obj_y - 0.5) * blockD;          // center at origin, scale to block depth
+
+        normals[idx*3+0] = 0;
+        normals[idx*3+1] = 1;
+        normals[idx*3+2] = 0;
+      }
+    }
+
+    // Compute normals via finite differences
+    for (let j = 1; j < gridH - 1; j++) {
+      for (let i = 1; i < gridW - 1; i++) {
+        const idx = j * gridW + i;
+        const L = positions.slice((j*gridW + i - 1)*3, (j*gridW + i - 1)*3 + 3);
+        const R = positions.slice((j*gridW + i + 1)*3, (j*gridW + i + 1)*3 + 3);
+        const D = positions.slice(((j-1)*gridW + i)*3, ((j-1)*gridW + i)*3 + 3);
+        const U = positions.slice(((j+1)*gridW + i)*3, ((j+1)*gridW + i)*3 + 3);
+        const dx = [R[0]-L[0], R[1]-L[1], R[2]-L[2]];
+        const dz = [U[0]-D[0], U[1]-D[1], U[2]-D[2]];
+        const n = cross3(dz, dx);
+        const nl = Math.sqrt(n[0]*n[0] + n[1]*n[1] + n[2]*n[2]) || 1;
+        normals[idx*3+0] = n[0] / nl;
+        normals[idx*3+1] = Math.abs(n[1] / nl);
+        normals[idx*3+2] = n[2] / nl;
+      }
+    }
+
+    return { positions, normals, gridW, gridH };
+  }
+
+  function loadCausticOBJ(text) {
+    const result = parseCausticOBJ(text);
+    if (!result) {
+      document.getElementById('obj-status').textContent = 'Failed to parse caustic OBJ';
+      return;
+    }
+    objSurface = result;
+    params.surfaceMode = 'obj';
+    document.getElementById('surface-mode').value = 'obj';
+    surfaceDirty = true;
+    const pts = result.gridW * result.gridH;
+    document.getElementById('obj-status').textContent =
+      `Loaded: ${pts.toLocaleString()} surface points (${result.gridW}×${result.gridH})`;
+  }
+
   // ─── Init ──────────────────────────────────────────────────────────────────
 
   function init() {
@@ -1112,7 +1206,7 @@ void main() {
   }
 
   // Expose globals needed by ui.js
-  window.CausticApp = { setParam, loadOBJ, setCameraPreset, init };
+  window.CausticApp = { setParam, loadOBJ, loadCausticOBJ, setCameraPreset, init };
   window.setCameraPreset = setCameraPreset;
 
   document.addEventListener('DOMContentLoaded', init);
