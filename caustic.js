@@ -1089,15 +1089,34 @@ void main() {
       }
     }
 
+    // Compute actual maximum deformation depth from raw OBJ data (normalized units)
+    // so we can tell the caller the minimum blockH needed.
+    let maxAbsObjZ = 0;
+    for (const v of topVerts) {
+      maxAbsObjZ = Math.max(maxAbsObjZ, Math.abs(v[2]));
+    }
+    // requiredBlockH = depth in world units + small safety margin
+    const requiredBlockH = maxAbsObjZ * blockW + 0.02;
+
+    // Safety clamp: if any surface point ended up below blockBottom (numerical
+    // overshoot from the solver), push it back up to avoid t1<0 in ray trace.
+    const blockBottomY = params.groundDist;
+    for (let i = 0; i < gridW * gridH; i++) {
+      if (positions[i*3+1] < blockBottomY) {
+        positions[i*3+1] = blockBottomY;
+      }
+    }
+
     return { positions, normals, gridW, gridH,
-             blockTopAtParse: params.groundDist + params.blockH };
+             blockTopAtParse: params.groundDist + params.blockH,
+             requiredBlockH };
   }
 
   function loadCausticOBJ(text) {
     const result = parseCausticOBJ(text);
     if (!result) {
       document.getElementById('obj-status').textContent = 'Failed to parse caustic OBJ';
-      return;
+      return null;
     }
     objSurface = result;
     params.surfaceMode = 'obj';
@@ -1106,6 +1125,8 @@ void main() {
     const pts = result.gridW * result.gridH;
     document.getElementById('obj-status').textContent =
       `Loaded: ${pts.toLocaleString()} surface points (${result.gridW}×${result.gridH})`;
+    // Return info so ui.js can auto-adjust blockH if needed
+    return { requiredBlockH: result.requiredBlockH };
   }
 
   // ─── Init ──────────────────────────────────────────────────────────────────

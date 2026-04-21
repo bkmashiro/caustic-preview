@@ -395,12 +395,24 @@ self.addEventListener('message', async (e) => {
           bhSlider.dispatchEvent(new Event('input'));
 
           // Now parse OBJ — params.groundDist / blockH are already updated above
-          app.loadCausticOBJ(objText);
+          const loadInfo = app.loadCausticOBJ(objText);
           lastGeneratedObjText = objText;
           if (btnDownloadObj) btnDownloadObj.disabled = false;
 
+          // Auto-increase blockH if the actual lens depth exceeds our preset estimate.
+          // This happens when the solver pushes some vertices slightly deeper than the
+          // nominal thickness (numerical overshoot), causing those surface points to
+          // fall below blockBottom → t1<0 in ray trace → missing caustic regions.
+          let finalBlockH = targetBlockH;
+          if (loadInfo && loadInfo.requiredBlockH > targetBlockH) {
+            finalBlockH = +loadInfo.requiredBlockH.toFixed(2);
+            const bhSlider = document.getElementById('block-h');
+            bhSlider.value = Math.max(0.2, Math.min(3, finalBlockH));
+            bhSlider.dispatchEvent(new Event('input'));
+          }
+
           setProgress(100);
-          setWasmStatus(`Done! groundDist→${targetGroundDist}, blockH→${targetBlockH}`);
+          setWasmStatus(`Done! groundDist→${targetGroundDist}, blockH→${finalBlockH}`);
         } catch (err) {
           setWasmStatus('OBJ parse error: ' + err.message, true);
         }
