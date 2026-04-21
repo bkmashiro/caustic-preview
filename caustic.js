@@ -79,11 +79,12 @@ const CausticRenderer = (() => {
   const mat4 = {
     identity: () => new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]),
     multiply: (a, b) => {
+      // Column-major multiply: C = A*B means C[col*4+row] = sum_k A[k*4+row] * B[col*4+k]
       const r = new Float32Array(16);
       for (let i = 0; i < 4; i++)
         for (let j = 0; j < 4; j++)
           for (let k = 0; k < 4; k++)
-            r[i*4+j] += a[i*4+k] * b[k*4+j];
+            r[i*4+j] += a[k*4+j] * b[i*4+k];
       return r;
     },
     perspective: (fov, aspect, near, far) => {
@@ -728,11 +729,21 @@ void main() {
   let frameCount = 0;
   let lastFpsTime = 0;
   let lastFrameMs = 0;
+  let debugLogged = false;
 
   function render(now) {
     if (surfaceDirty) {
       buildSurface();
       buildBlock();
+    }
+
+    if (!debugLogged && surfacePositions) {
+      const nPts = surfaceGridW * surfaceGridH;
+      const ys = Array.from({ length: nPts }, (_, i) => surfacePositions[i * 3 + 1]);
+      console.log('[caustic debug] Surface points:', nPts);
+      console.log('[caustic debug] Surface Y range:', Math.min(...ys).toFixed(4), 'to', Math.max(...ys).toFixed(4));
+      console.log('[caustic debug] Camera pos:', getCameraPos().map(x => x.toFixed(3)));
+      debugLogged = true;
     }
 
     const t0 = performance.now();
