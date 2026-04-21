@@ -249,7 +249,11 @@ self.addEventListener('message', async (e) => {
         '--focal_l',    String(focalL),
         '--thickness',  String(thickness),
       ];
-      mod.callMain(args);
+      // callMain throws ExitStatus on normal program exit — catch and ignore it,
+      // then continue to read the output file.
+      try { mod.callMain(args); } catch(e) {
+        if (e && e.name !== 'ExitStatus' && !(e.message && e.message.includes('exit'))) throw e;
+      }
 
       self.postMessage({ type: 'status', text: 'Reading output mesh…' });
       const objText = mod.FS.readFile('/output.obj', { encoding: 'utf8' });
