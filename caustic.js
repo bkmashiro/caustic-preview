@@ -792,7 +792,10 @@ void main() {
     const groundY  = 0;
     const blockBottom = params.groundDist;
     const blockTop    = params.groundDist + params.blockH;
-    const groundSize  = Math.max(params.blockW, params.blockD) * 5;
+    // groundSize must cover the full caustic spread on the floor.
+    // Refracted rays travel ~groundDist downward after the block, so spread
+    // grows with groundDist.  Use block footprint + generous margin for distance.
+    const groundSize  = Math.max(params.blockW, params.blockD) * 2 + params.groundDist * 4;
     const groundHalf  = groundSize / 2;
 
     const W = canvas.width, H = canvas.height;
