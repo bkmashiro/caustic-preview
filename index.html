@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Caustic Lens Preview</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0f0f14;
+    color: #e0e0e0;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  #sidebar {
+    width: 300px;
+    min-width: 300px;
+    background: #16161e;
+    border-right: 1px solid #2a2a3a;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    z-index: 10;
+  }
+
+  #sidebar-header {
+    padding: 18px 20px 14px;
+    background: #1a1a24;
+    border-bottom: 1px solid #2a2a3a;
+  }
+
+  #sidebar-header h1 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #a0c4ff;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  #sidebar-header p {
+    font-size: 11px;
+    color: #666;
+    margin-top: 3px;
+  }
+
+  .section {
+    padding: 14px 16px;
+    border-bottom: 1px solid #222230;
+  }
+
+  .section-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #6a8caf;
+    margin-bottom: 10px;
+  }
+
+  .control-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .control-row label {
+    font-size: 12px;
+    color: #aaa;
+    width: 120px;
+    flex-shrink: 0;
+  }
+
+  .control-row input[type=range] {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 4px;
+    border-radius: 2px;
+    background: #2a2a3a;
+    outline: none;
+    cursor: pointer;
+  }
+
+  .control-row input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #5b8fff;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .control-row input[type=range]::-webkit-slider-thumb:hover {
+    background: #82aaff;
+  }
+
+  .value-display {
+    font-size: 11px;
+    color: #8899bb;
+    width: 38px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 13px;
+    border-radius: 5px;
+    border: 1px solid #3a3a50;
+    background: #1e1e2e;
+    color: #c0c8e8;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+  }
+
+  .btn:hover {
+    background: #252535;
+    border-color: #5b8fff;
+    color: #a0c4ff;
+  }
+
+  .btn.active {
+    background: #1e3060;
+    border-color: #5b8fff;
+    color: #82aaff;
+  }
+
+  .btn-group {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
+
+  #obj-upload-row,
+  #png-upload-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-top: 8px;
+  }
+
+  #obj-file-input {
+    display: none;
+  }
+
+  #obj-status {
+    font-size: 11px;
+    color: #6a8caf;
+    margin-top: 4px;
+  }
+
+  #canvas-container {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #080810;
+  }
+
+  #main-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  #overlay-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  #hemisphere-container {
+    display: flex;
+    justify-content: center;
+    padding: 8px 0;
+  }
+
+  #hemisphere-canvas {
+    cursor: crosshair;
+    border-radius: 50%;
+    border: 1px solid #2a2a3a;
+  }
+
+  #perf-display {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    background: rgba(0,0,0,0.5);
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    color: #6a8caf;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
+
+  #info-bar {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.55);
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    color: #8899bb;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  .color-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .color-row label {
+    font-size: 12px;
+    color: #aaa;
+    width: 120px;
+    flex-shrink: 0;
+  }
+
+  .color-row input[type=color] {
+    width: 36px;
+    height: 22px;
+    border: 1px solid #3a3a50;
+    border-radius: 3px;
+    background: none;
+    cursor: pointer;
+    padding: 1px;
+  }
+
+  select {
+    background: #1e1e2e;
+    border: 1px solid #3a3a50;
+    color: #c0c8e8;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  select:focus { outline: none; border-color: #5b8fff; }
+
+  .control-row select {
+    flex: 1;
+  }
+
+  .tip {
+    font-size: 11px;
+    color: #4a5a6a;
+    margin-top: 6px;
+    line-height: 1.5;
+  }
+
+  /* ── Generate from Image panel ── */
+
+  #img-preview-wrap {
+    display: none;
+    margin: 8px 0;
+    border-radius: 5px;
+    overflow: hidden;
+    border: 1px solid #2a2a3a;
+    background: #0d0d16;
+    height: 120px;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #img-preview-wrap.has-image {
+    display: flex;
+  }
+
+  #img-preview {
+    max-width: 100%;
+    max-height: 120px;
+    object-fit: contain;
+    display: block;
+  }
+
+  #btn-generate {
+    width: 100%;
+    justify-content: center;
+    margin-top: 4px;
+    background: #1a2a50;
+    border-color: #3a5aaa;
+    color: #82aaff;
+    font-weight: 600;
+  }
+
+  #btn-generate:hover:not(:disabled) {
+    background: #1e3060;
+    border-color: #5b8fff;
+    color: #a8c8ff;
+  }
+
+  #btn-generate:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  #wasm-progress-wrap {
+    display: none;
+    margin-top: 8px;
+  }
+
+  #wasm-progress-wrap.visible {
+    display: block;
+  }
+
+  #wasm-progress-bar-track {
+    height: 4px;
+    border-radius: 2px;
+    background: #2a2a3a;
+    overflow: hidden;
+    margin-bottom: 5px;
+  }
+
+  #wasm-progress-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #3a6fff, #82aaff);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+  }
+
+  #wasm-progress-bar.indeterminate {
+    width: 40%;
+    animation: wasm-slide 1.2s ease-in-out infinite;
+  }
+
+  @keyframes wasm-slide {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(350%); }
+  }
+
+  #wasm-status {
+    font-size: 11px;
+    color: #6a8caf;
+    margin-top: 2px;
+  }
+
+  #wasm-status.error {
+    color: #e07070;
+  }
+
+  #png-file-input {
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div id="sidebar-header">
+    <h1>Caustic Lens Preview</h1>
+    <p>Resin block · Forward ray tracing · WebGL2</p>
+  </div>
+
+  <div class="section">
+    <div class="section-title">☀ Light Direction</div>
+    <div id="hemisphere-container">
+      <canvas id="hemisphere-canvas" width="140" height="140"></canvas>
+    </div>
+    <div class="control-row">
+      <label>Azimuth</label>
+      <input type="range" id="azimuth" min="0" max="360" value="45" step="1">
+      <span class="value-display" id="azimuth-val">45°</span>
+    </div>
+    <div class="control-row">
+      <label>Elevation</label>
+      <input type="range" id="elevation" min="5" max="85" value="45" step="1">
+      <span class="value-display" id="elevation-val">45°</span>
+    </div>
+    <div class="control-row">
+      <label>Intensity</label>
+      <input type="range" id="intensity" min="0.1" max="5" value="1.5" step="0.05">
+      <span class="value-display" id="intensity-val">1.5</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">🔬 Optics</div>
+    <div class="control-row">
+      <label>Refractive Index</label>
+      <input type="range" id="ior" min="1.1" max="2.4" value="1.5" step="0.01">
+      <span class="value-display" id="ior-val">1.50</span>
+    </div>
+    <div class="control-row">
+      <label>Caustic Exposure</label>
+      <input type="range" id="exposure" min="0.1" max="8" value="2.0" step="0.05">
+      <span class="value-display" id="exposure-val">2.0</span>
+    </div>
+    <div class="control-row">
+      <label>Spread / Blur</label>
+      <input type="range" id="spread" min="0.5" max="8" value="1.5" step="0.1">
+      <span class="value-display" id="spread-val">1.5</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">📦 Block</div>
+    <div class="control-row">
+      <label>Width</label>
+      <input type="range" id="block-w" min="0.5" max="4" value="2" step="0.05">
+      <span class="value-display" id="block-w-val">2.0</span>
+    </div>
+    <div class="control-row">
+      <label>Depth</label>
+      <input type="range" id="block-d" min="0.5" max="4" value="2" step="0.05">
+      <span class="value-display" id="block-d-val">2.0</span>
+    </div>
+    <div class="control-row">
+      <label>Height</label>
+      <input type="range" id="block-h" min="0.2" max="3" value="1" step="0.05">
+      <span class="value-display" id="block-h-val">1.0</span>
+    </div>
+    <div class="control-row">
+      <label>Ground Distance</label>
+      <input type="range" id="ground-dist" min="0" max="4" value="0.5" step="0.05">
+      <span class="value-display" id="ground-dist-val">0.5</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">〰 Surface Profile</div>
+    <div class="control-row">
+      <label>Mode</label>
+      <select id="surface-mode">
+        <option value="sinusoidal">Sinusoidal bumps</option>
+        <option value="concentric">Concentric rings</option>
+        <option value="diagonal">Diagonal waves</option>
+        <option value="random">Random (Perlin-like)</option>
+        <option value="flat">Flat (no caustic)</option>
+        <option value="obj">Loaded OBJ ↓</option>
+      </select>
+    </div>
+    <div class="control-row">
+      <label>Bump Amplitude</label>
+      <input type="range" id="bump-amp" min="0" max="0.3" value="0.05" step="0.002">
+      <span class="value-display" id="bump-amp-val">0.05</span>
+    </div>
+    <div class="control-row">
+      <label>Bump Frequency</label>
+      <input type="range" id="bump-freq" min="0.5" max="20" value="4" step="0.1">
+      <span class="value-display" id="bump-freq-val">4.0</span>
+    </div>
+    <div class="control-row">
+      <label>Resolution</label>
+      <input type="range" id="surface-res" min="16" max="256" value="128" step="8">
+      <span class="value-display" id="surface-res-val">128</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">🖼 Generate from Image</div>
+
+    <!-- Image upload -->
+    <div id="png-upload-row" style="margin-bottom:0">
+      <button class="btn" onclick="document.getElementById('png-file-input').click()">🖼 Choose PNG…</button>
+      <input type="file" id="png-file-input" accept="image/png">
+    </div>
+
+    <!-- Thumbnail preview -->
+    <div id="img-preview-wrap">
+      <img id="img-preview" alt="Uploaded image preview">
+    </div>
+
+    <!-- Parameters -->
+    <div class="control-row" style="margin-top:8px">
+      <label>Resolution (W)</label>
+      <input type="range" id="wasm-res-w" min="20" max="100" value="50" step="1">
+      <span class="value-display" id="wasm-res-w-val">50</span>
+    </div>
+    <div class="control-row">
+      <label>Focal Length</label>
+      <input type="range" id="wasm-focal-l" min="0.5" max="3.0" value="1.5" step="0.05">
+      <span class="value-display" id="wasm-focal-l-val">1.50</span>
+    </div>
+    <div class="control-row">
+      <label>Thickness</label>
+      <input type="range" id="wasm-thickness" min="0.05" max="0.5" value="0.2" step="0.01">
+      <span class="value-display" id="wasm-thickness-val">0.20</span>
+    </div>
+
+    <!-- Generate button -->
+    <button class="btn" id="btn-generate" disabled>⚡ Generate Caustic Surface</button>
+
+    <!-- Progress -->
+    <div id="wasm-progress-wrap">
+      <div id="wasm-progress-bar-track">
+        <div id="wasm-progress-bar" class="indeterminate"></div>
+      </div>
+      <div id="wasm-status"></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">📂 Load OBJ Surface</div>
+    <div id="obj-upload-row">
+      <button class="btn" onclick="document.getElementById('obj-file-input').click()">📁 Choose OBJ…</button>
+      <input type="file" id="obj-file-input" accept=".obj">
+    </div>
+    <div id="obj-status">No OBJ loaded — using procedural surface</div>
+    <p class="tip">Load the OBJ output from poisson_caustic_design. The top surface vertices are used directly.</p>
+  </div>
+
+  <div class="section">
+    <div class="section-title">🎨 Appearance</div>
+    <div class="color-row">
+      <label>Caustic Color</label>
+      <input type="color" id="caustic-color" value="#ffe090">
+    </div>
+    <div class="color-row">
+      <label>Ground Color</label>
+      <input type="color" id="ground-color" value="#202028">
+    </div>
+    <div class="color-row">
+      <label>Block Color</label>
+      <input type="color" id="block-color" value="#8ab4d0">
+    </div>
+    <div class="control-row">
+      <label>Show Block</label>
+      <input type="checkbox" id="show-block" checked style="cursor:pointer">
+    </div>
+    <div class="control-row">
+      <label>Show Grid</label>
+      <input type="checkbox" id="show-grid" checked style="cursor:pointer">
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">📷 View</div>
+    <div class="btn-group">
+      <button class="btn" id="btn-top" onclick="setCameraPreset('top')">Top</button>
+      <button class="btn" id="btn-side" onclick="setCameraPreset('side')">Side</button>
+      <button class="btn" id="btn-persp" onclick="setCameraPreset('persp')">Perspective</button>
+    </div>
+    <p class="tip">Drag to orbit · Scroll to zoom · Right-drag to pan</p>
+  </div>
+</div>
+
+<div id="canvas-container">
+  <canvas id="main-canvas"></canvas>
+  <div id="info-bar">Interactive Caustic Preview — drag to orbit</div>
+  <div id="perf-display">⏱ — ms | — pts</div>
+</div>
+
+<script src="wasm/caustic.js"></script>
+<script src="caustic.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>
