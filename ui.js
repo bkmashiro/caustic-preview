@@ -18,11 +18,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function update() {
       const v = parseFloat(slider.value);
-      display.textContent = v.toFixed(decimals) + suffix;
+      if (isNaN(v)) return;
+      if (display) display.textContent = v.toFixed(decimals) + suffix;
       app.setParam(paramKey, v);
     }
 
     slider.addEventListener('input', update);
+    slider.addEventListener('change', update); // catches number-input blur/enter
     update(); // initialize display
   }
 
