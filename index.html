@@ -476,52 +476,60 @@
   <div class="section">
     <div class="section-title">🖼 Generate from Image</div>
 
-    <!-- Image upload -->
+    <!-- Step 1 -->
+    <div style="font-size:10px;color:#556;margin:2px 0 5px">① 上传高对比度 PNG（白色图案，黑色背景）</div>
     <div id="png-upload-row" style="margin-bottom:0">
-      <button class="btn" onclick="document.getElementById('png-file-input').click()">🖼 Choose PNG…</button>
+      <button class="btn" onclick="document.getElementById('png-file-input').click()">🖼 选择 PNG…</button>
       <input type="file" id="png-file-input" accept="image/png">
     </div>
-
-    <!-- Thumbnail preview -->
     <div id="img-preview-wrap">
       <img id="img-preview" alt="Uploaded image preview">
     </div>
 
-    <!-- Device preset -->
-    <div class="control-row" style="margin-top:8px">
-      <label>Printer</label>
+    <!-- Step 2 -->
+    <div style="font-size:10px;color:#556;margin:8px 0 5px">② 实物尺寸（毫米）</div>
+    <div class="control-row">
+      <label title="打印出来的镜片宽度">镜片宽度</label>
+      <input type="number" id="lens-size-mm" min="10" max="200" value="50" step="1"
+             style="width:58px;background:#1a1e2e;color:#e0e4f0;border:1px solid #2a3050;border-radius:4px;padding:2px 6px;font-size:13px;">
+      <span style="color:#667;font-size:12px">mm</span>
+      <span class="value-display" id="lens-size-mm-val" style="display:none">50 mm</span>
+    </div>
+    <div class="control-row">
+      <label title="焦散图案距镜片底面的距离">焦散距离</label>
+      <input type="number" id="proj-dist-mm" min="10" max="500" value="150" step="5"
+             style="width:58px;background:#1a1e2e;color:#e0e4f0;border:1px solid #2a3050;border-radius:4px;padding:2px 6px;font-size:13px;">
+      <span style="color:#667;font-size:12px">mm</span>
+      <span class="value-display" id="proj-dist-mm-val" style="display:none">150 mm</span>
+    </div>
+    <div style="font-size:10px;color:#445;margin:3px 0 6px;line-height:1.5">
+      例：50mm 镜片 + 150mm 距离 → 图案出现在镜片正下方 15cm 处
+    </div>
+
+    <!-- Step 3 -->
+    <div style="font-size:10px;color:#556;margin:4px 0 5px">③ 打印精度</div>
+    <div class="control-row">
+      <label>打印机</label>
       <select id="device-preset" style="flex:1;background:#1e1e2a;color:#e0e0e0;border:1px solid #3a3a50;border-radius:4px;padding:3px 6px;font-size:12px;">
-        <option value="form4_fast">Form 4 / SLA 25μm — Fast (48pt)</option>
-        <option value="form4_fine" selected>Form 4 / SLA 25μm — Fine (80pt)</option>
-        <option value="form4_ultra">Form 4 / SLA 25μm — Ultra (128pt)</option>
-        <option value="hubs_sla">Hubs.com Premium SLA (64pt)</option>
-        <option value="preview">Quick Preview — Low res (32pt)</option>
+        <option value="preview">快速预览（低精度 32pt）</option>
+        <option value="form4_fast">Form 4 SLA 25μm — 快速（48pt）</option>
+        <option value="form4_fine" selected>Form 4 SLA 25μm — 精细（80pt）</option>
+        <option value="form4_ultra">Form 4 SLA 25μm — 超精细（128pt）</option>
+        <option value="hubs_sla">Hubs.com Premium SLA（64pt）</option>
       </select>
     </div>
-    <!-- Lens size -->
-    <div class="control-row">
-      <label>Lens size</label>
-      <input type="range" id="lens-size-mm" min="20" max="80" value="40" step="5">
-      <span class="value-display" id="lens-size-mm-val">40 mm</span>
-    </div>
-    <!-- Projection distance -->
-    <div class="control-row">
-      <label>Projection dist.</label>
-      <input type="range" id="proj-dist-mm" min="20" max="120" value="40" step="5">
-      <span class="value-display" id="proj-dist-mm-val">40 mm</span>
-    </div>
-    <!-- Computed params display -->
-    <div style="font-size:10px;color:#555;margin:4px 0 6px;padding:4px 6px;background:#111;border-radius:3px;line-height:1.6" id="computed-params-display">
-      res_w: 80 · focal_l: 1.00 · thickness: 0.15
-    </div>
-    <!-- Hidden inputs still used by generate logic -->
+
+    <!-- Hidden computed inputs -->
     <input type="hidden" id="wasm-res-w" value="80">
     <input type="hidden" id="wasm-focal-l" value="1.00">
     <input type="hidden" id="wasm-thickness" value="0.15">
+    <div style="font-size:10px;color:#333;margin:2px 0 6px;padding:3px 6px;background:#111;border-radius:3px" id="computed-params-display">
+      res_w: 80 · focal_l: 1.00 · thickness: 0.15
+    </div>
 
     <!-- Generate button -->
-    <button class="btn" id="btn-generate" disabled>⚡ Generate Caustic Surface</button>
-    <button class="btn" id="btn-download-obj" disabled style="margin-top:6px;width:100%;justify-content:center;">⬇ Download OBJ</button>
+    <button class="btn" id="btn-generate" disabled>⚡ 生成焦散曲面</button>
+    <button class="btn" id="btn-download-obj" disabled style="margin-top:6px;width:100%;justify-content:center;">⬇ 下载 OBJ</button>
 
     <!-- Progress -->
     <div id="wasm-progress-wrap">

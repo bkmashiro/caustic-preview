@@ -142,7 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
   ['device-preset','lens-size-mm','proj-dist-mm'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('change', updateComputedParams);
-    if (el && el.type === 'range') el.addEventListener('input', updateComputedParams);
+    if (el) el.addEventListener('input', updateComputedParams);
   });
   updateComputedParams(); // init
 
