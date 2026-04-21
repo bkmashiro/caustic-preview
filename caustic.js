@@ -29,7 +29,8 @@ const CausticRenderer = (() => {
   // Caustic FBO (forward splat accumulation)
   let causticFBO = null;
   let causticTex = null;
-  const CAUSTIC_W = 512, CAUSTIC_H = 512;
+  const CAUSTIC_W = 1024, CAUSTIC_H = 1024;
+  let causticUseFloat = false; // true = R32F (needs EXT_float_blend); false = RGBA8 normalized
 
   // Surface texture (RGBA32F: nx, ny, nz, heightOff)
   let surfaceTex = null;
@@ -342,13 +343,14 @@ void main() {
   const FS_CAUSTIC = `#version 300 es
 precision highp float;
 in  vec2 vOff;
+uniform float uSplatScale; // 1.0 for R32F; 1/N_surf for RGBA8 fallback
 out vec4 fragColor;
 
 void main() {
   float d2 = dot(vOff, vOff);   // 0 at center, 2 at corners
-  if (d2 > 2.0) discard;
   float w  = exp(-d2 * 2.0);    // Gaussian: 1 at center, ~0.02 at corners
-  fragColor = vec4(w, 0.0, 0.0, 0.0);
+  float v  = w * uSplatScale;
+  fragColor = vec4(v, v, v, v); // write to all channels for RGBA8 compatibility
 }
 `;
 
@@ -416,7 +418,13 @@ void main() {
     }
     causticTex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, causticTex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, CAUSTIC_W, CAUSTIC_H, 0, gl.RED, gl.FLOAT, null);
+    if (causticUseFloat) {
+      // R32F: full precision additive accumulation (requires EXT_float_blend)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, CAUSTIC_W, CAUSTIC_H, 0, gl.RED, gl.FLOAT, null);
+    } else {
+      // RGBA8 fallback: splat contributions scaled down to avoid saturation
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, CAUSTIC_W, CAUSTIC_H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    }
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -426,7 +434,7 @@ void main() {
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, causticTex, 0);
     const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
     if (status !== gl.FRAMEBUFFER_COMPLETE) {
-      console.error('Caustic FBO incomplete:', status);
+      console.error('Caustic FBO incomplete, status:', status);
     }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.bindTexture(gl.TEXTURE_2D, null);
@@ -812,9 +820,12 @@ void main() {
       gl.uniform3fv(ul(progCaustic, 'uLightDir'),  lightDir);
       gl.uniform1f(ul(progCaustic, 'uSplatR'),     splatR);
       gl.uniform1f(ul(progCaustic, 'uGroundHalf'), groundHalf);
+      // RGBA8 fallback: scale each splat so ~200 fully-overlapping splats ≈ 1.0
+      const nSurf = surfaceGridW * surfaceGridH;
+      gl.uniform1f(ul(progCaustic, 'uSplatScale'), causticUseFloat ? 1.0 : (200.0 / nSurf));
 
       gl.bindVertexArray(emptyVAO);
-      gl.drawArrays(gl.TRIANGLES, 0, surfaceGridW * surfaceGridH * 6);
+      gl.drawArrays(gl.TRIANGLES, 0, nSurf * 6);
       gl.bindVertexArray(null);
 
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -1113,8 +1124,14 @@ void main() {
       return;
     }
 
-    // EXT_color_buffer_float: needed for R32F and RGBA32F render targets
+    // EXT_color_buffer_float: needed for R32F/RGBA32F render targets + surface texture
     gl.getExtension('EXT_color_buffer_float');
+
+    // EXT_float_blend: required to blend (additive accumulate) into float framebuffers.
+    // Without this, WebGL2 silently disables blending on float FBOs — last splat wins,
+    // all previous splats discarded → dots.  Fall back to RGBA8 if not available.
+    causticUseFloat = !!gl.getExtension('EXT_float_blend');
+    console.log('[caustic] EXT_float_blend:', causticUseFloat ? 'YES' : 'NO — RGBA8 fallback');
 
     // OES_texture_float_linear: smooth filtering of float textures
     const floatLinExt = gl.getExtension('OES_texture_float_linear');
