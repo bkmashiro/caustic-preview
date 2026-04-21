@@ -544,7 +544,7 @@ void main() {
     const top = params.groundDist + params.blockH;
     const res = Math.min(params.surfaceRes, 64);
     const mode = params.surfaceMode === 'obj' ? 'sinusoidal' : params.surfaceMode;
-    const amp = params.bumpAmp;
+    const amp  = params.surfaceMode === 'obj' ? 0 : params.bumpAmp; // flat top when OBJ loaded
     const freq = params.bumpFreq;
 
     const verts = [];
