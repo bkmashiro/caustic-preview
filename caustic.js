@@ -37,7 +37,7 @@ const CausticRenderer = (() => {
     ior: 1.5,
     exposure: 4.0,
     spread: 0.0,
-    sigma: 0.05,
+    sigma: 0.02,
     blockW: 2.0,
     blockD: 2.0,
     blockH: 1.0,

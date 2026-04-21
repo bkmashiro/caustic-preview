@@ -382,8 +382,24 @@ self.addEventListener('message', async (e) => {
           app.loadCausticOBJ(objText);
           lastGeneratedObjText = objText;
           if (btnDownloadObj) btnDownloadObj.disabled = false;
+
+          // Auto-configure preview to match design parameters:
+          //   groundDist = focalL × blockW   (projection distance)
+          //   blockH     = thickness × blockW (lens thickness)
+          const bW = parseFloat(document.getElementById('block-w').value);
+          const targetGroundDist = +(focalL    * bW).toFixed(2);
+          const targetBlockH     = +(thickness * bW).toFixed(2);
+
+          const gdSlider = document.getElementById('ground-dist');
+          gdSlider.value = Math.max(0, Math.min(4, targetGroundDist));
+          gdSlider.dispatchEvent(new Event('input'));
+
+          const bhSlider = document.getElementById('block-h');
+          bhSlider.value = Math.max(0.2, Math.min(3, targetBlockH));
+          bhSlider.dispatchEvent(new Event('input'));
+
           setProgress(100);
-          setWasmStatus('Done! Surface loaded into renderer.');
+          setWasmStatus(`Done! groundDist→${targetGroundDist}, blockH→${targetBlockH}`);
         } catch (err) {
           setWasmStatus('OBJ parse error: ' + err.message, true);
         }
