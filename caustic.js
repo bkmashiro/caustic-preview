@@ -60,6 +60,7 @@ const CausticRenderer = (() => {
     showBlock: true,
     showGrid: true,
     showCausticOnly: false,
+    lensThicknessNorm: 0.0,  // glass depth / lensSize; set after WASM generation for accurate exit surface
   };
 
   // Camera
@@ -264,7 +265,7 @@ uniform int   uSurfH;
 uniform float uBlockW;
 uniform float uBlockD;
 uniform float uBlockTop;
-uniform float uBlockBottom;
+uniform float uGlassExitY;  // Y of glass exit surface (flat bottom of curved lens, above air gap)
 uniform float uGroundY;
 uniform float uIOR;
 uniform vec3  uLightDir;
@@ -286,12 +287,12 @@ vec2 traceToGround(float wx, float wz, float wy, vec3 Nt, vec3 L) {
   if (length(D1) < 0.01 || D1.y >= 0.0) return vec2(1e9);
   D1 = normalize(D1);
 
-  // Trace to block bottom
-  float t1 = (uBlockBottom - wy) / D1.y;
+  // Trace to glass exit surface (flat bottom of curved lens)
+  float t1 = (uGlassExitY - wy) / D1.y;
   if (t1 < 0.0) return vec2(1e9);
   vec3 B = vec3(wx, wy, wz) + t1 * D1;
 
-  // Refract glass → air at flat bottom (N into glass = upward)
+  // Refract glass → air at flat exit (N into glass = upward)
   vec3 D2 = snell(D1, vec3(0.0, 1.0, 0.0), uIOR);
   if (length(D2) < 0.01 || D2.y >= 0.0) return vec2(1e9);
   D2 = normalize(D2);
@@ -849,6 +850,13 @@ void main() {
     // groundDist = lens top surface to ground (optical focal distance)
     const blockTop    = params.groundDist;
     const blockBottom = params.groundDist - params.blockH;
+    // glassExitY: flat bottom of the curved lens surface (above the air gap to ground).
+    // When lensThicknessNorm is set (after WASM generation), the exit is at
+    //   groundDist - lensThicknessNorm * blockW   (air gap = baseMm/lensSize * blockW below it).
+    // Fall back to blockBottom for manual OBJ loads or procedural surfaces.
+    const glassExitY = params.lensThicknessNorm > 0
+      ? params.groundDist - params.lensThicknessNorm * params.blockW
+      : blockBottom;
     // Caustic spread depends on distance from block exit (bottom) to ground
     const groundSize  = Math.max(params.blockW, params.blockD) * 2 + Math.max(blockBottom, 0.1) * 4;
     const groundHalf  = groundSize / 2;
@@ -873,8 +881,8 @@ void main() {
       gl.uniform1i(ul(progCaustic, 'uSurfH'),      surfaceGridH);
       gl.uniform1f(ul(progCaustic, 'uBlockW'),     params.blockW);
       gl.uniform1f(ul(progCaustic, 'uBlockD'),     params.blockD);
-      gl.uniform1f(ul(progCaustic, 'uBlockTop'),   blockTop);
-      gl.uniform1f(ul(progCaustic, 'uBlockBottom'),blockBottom);
+      gl.uniform1f(ul(progCaustic, 'uBlockTop'),    blockTop);
+      gl.uniform1f(ul(progCaustic, 'uGlassExitY'), glassExitY);
       gl.uniform1f(ul(progCaustic, 'uGroundY'),    groundY);
       gl.uniform1f(ul(progCaustic, 'uIOR'),        params.ior);
       gl.uniform3fv(ul(progCaustic, 'uLightDir'),  lightDir);
