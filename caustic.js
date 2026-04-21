@@ -609,77 +609,132 @@ void main() {
     const hd = params.blockD / 2;
     const bot = params.groundDist;
     const top = params.groundDist + params.blockH;
-    const res = Math.min(params.surfaceRes, 64);
-    const mode = params.surfaceMode === 'obj' ? 'sinusoidal' : params.surfaceMode;
-    const amp  = params.surfaceMode === 'obj' ? 0 : params.bumpAmp; // flat top when OBJ loaded
-    const freq = params.bumpFreq;
 
     const verts = [];
     const indices = [];
 
-    function pushFace(positions, normals) {
-      const base = verts.length / 6;
-      for (let i = 0; i < positions.length; i++) {
-        verts.push(positions[i][0], positions[i][1], positions[i][2],
-                   normals[i][0],  normals[i][1],  normals[i][2]);
-      }
-      return base;
-    }
+    const useOBJ = params.surfaceMode === 'obj' && surfacePositions && surfaceGridW >= 2 && surfaceGridH >= 2;
 
-    // Bottom face (flat)
-    {
-      const base = verts.length / 6;
-      verts.push(-hw, bot, -hd,  0,-1,0,
-                  hw, bot, -hd,  0,-1,0,
-                  hw, bot,  hd,  0,-1,0,
-                 -hw, bot,  hd,  0,-1,0);
-      indices.push(base, base+1, base+2, base, base+2, base+3);
-    }
+    if (useOBJ) {
+      // ── OBJ mode: use actual lens surface for top mesh ──────────────────────
+      const gW = surfaceGridW, gH = surfaceGridH;
 
-    // Top surface (bumpy)
-    {
-      const dx = params.blockW / (res - 1);
-      const dz = params.blockD / (res - 1);
-      const base = verts.length / 6;
-      for (let j = 0; j < res; j++) {
-        for (let i = 0; i < res; i++) {
-          const wx = -hw + i * dx;
-          const wz = -hd + j * dz;
-          const wy = top + heightField(wx, wz, mode, amp, freq);
-          const eps = dx * 0.5;
-          const hL = heightField(wx-eps, wz, mode, amp, freq);
-          const hR = heightField(wx+eps, wz, mode, amp, freq);
-          const hD = heightField(wx, wz-eps, mode, amp, freq);
-          const hU = heightField(wx, wz+eps, mode, amp, freq);
-          const nx = -(hR-hL)/(2*eps), nz = -(hU-hD)/(2*eps), ny = 1.0;
-          const nl = Math.sqrt(nx*nx+ny*ny+nz*nz);
-          verts.push(wx, wy, wz, nx/nl, ny/nl, nz/nl);
+      // Top surface (actual lens profile from OBJ)
+      const topBase = verts.length / 6;
+      for (let j = 0; j < gH; j++) {
+        for (let i = 0; i < gW; i++) {
+          const idx = j * gW + i;
+          verts.push(
+            surfacePositions[idx*3+0], surfacePositions[idx*3+1], surfacePositions[idx*3+2],
+            surfaceNormals[idx*3+0],   surfaceNormals[idx*3+1],   surfaceNormals[idx*3+2]
+          );
         }
       }
-      for (let j = 0; j < res-1; j++) {
-        for (let i = 0; i < res-1; i++) {
-          const a = base + j*res+i;
-          const b = a+1, c = a+res, d = a+res+1;
-          indices.push(a,b,d, a,d,c);
+      for (let j = 0; j < gH - 1; j++) {
+        for (let i = 0; i < gW - 1; i++) {
+          const a = topBase + j*gW + i;
+          const b = a + 1, c = a + gW, d = a + gW + 1;
+          indices.push(a, b, d, a, d, c);
         }
       }
-    }
 
-    // Side faces (flat)
-    const sides = [
-      // -X face
-      [[-hw,bot,-hd,  -1,0,0],  [-hw,bot,hd,  -1,0,0],  [-hw,top,-hd, -1,0,0],  [-hw,top,hd,  -1,0,0]],
-      // +X face
-      [[hw,bot,hd,   1,0,0],   [hw,bot,-hd,  1,0,0],   [hw,top,hd,  1,0,0],   [hw,top,-hd, 1,0,0]],
-      // -Z face
-      [[hw,bot,-hd,  0,0,-1],  [-hw,bot,-hd, 0,0,-1],  [hw,top,-hd, 0,0,-1],  [-hw,top,-hd, 0,0,-1]],
-      // +Z face
-      [[-hw,bot,hd,  0,0,1],   [hw,bot,hd,  0,0,1],   [-hw,top,hd, 0,0,1],   [hw,top,hd, 0,0,1]],
-    ];
-    for (const side of sides) {
-      const base = verts.length / 6;
-      for (const v of side) verts.push(...v);
-      indices.push(base, base+1, base+2, base+1, base+3, base+2);
+      // Bottom face (flat support plate)
+      {
+        const b = verts.length / 6;
+        verts.push(-hw, bot, -hd,  0,-1,0,
+                    hw, bot, -hd,  0,-1,0,
+                    hw, bot,  hd,  0,-1,0,
+                   -hw, bot,  hd,  0,-1,0);
+        indices.push(b, b+2, b+1, b, b+3, b+2);
+      }
+
+      // Side faces: for each boundary edge of the lens surface, drop a quad to bot.
+      // Culling is disabled for the glass block so winding order doesn't matter.
+      const P = surfacePositions;
+      function sideQuad(i0, i1, nx, ny, nz) {
+        const x0=P[i0*3], y0=P[i0*3+1], z0=P[i0*3+2];
+        const x1=P[i1*3], y1=P[i1*3+1], z1=P[i1*3+2];
+        const b = verts.length / 6;
+        verts.push(
+          x0, y0, z0,  nx, ny, nz,
+          x1, y1, z1,  nx, ny, nz,
+          x1, bot, z1, nx, ny, nz,
+          x0, bot, z0, nx, ny, nz
+        );
+        indices.push(b, b+1, b+2, b, b+2, b+3);
+      }
+
+      // Front edge (j=0, normal -Z)
+      for (let i = 0; i < gW - 1; i++)
+        sideQuad(0*gW + i, 0*gW + i+1, 0, 0, -1);
+      // Back edge (j=gH-1, normal +Z)
+      for (let i = 0; i < gW - 1; i++)
+        sideQuad((gH-1)*gW + i+1, (gH-1)*gW + i, 0, 0, 1);
+      // Left edge (i=0, normal -X)
+      for (let j = 0; j < gH - 1; j++)
+        sideQuad((j+1)*gW, j*gW, -1, 0, 0);
+      // Right edge (i=gW-1, normal +X)
+      for (let j = 0; j < gH - 1; j++)
+        sideQuad(j*gW + (gW-1), (j+1)*gW + (gW-1), 1, 0, 0);
+
+    } else {
+      // ── Procedural mode: heightfield top + flat sides ───────────────────────
+      const res  = Math.min(params.surfaceRes, 64);
+      const mode = params.surfaceMode;
+      const amp  = params.bumpAmp;
+      const freq = params.bumpFreq;
+
+      // Bottom face (flat)
+      {
+        const base = verts.length / 6;
+        verts.push(-hw, bot, -hd,  0,-1,0,
+                    hw, bot, -hd,  0,-1,0,
+                    hw, bot,  hd,  0,-1,0,
+                   -hw, bot,  hd,  0,-1,0);
+        indices.push(base, base+1, base+2, base, base+2, base+3);
+      }
+
+      // Top surface (bumpy)
+      {
+        const dx = params.blockW / (res - 1);
+        const dz = params.blockD / (res - 1);
+        const base = verts.length / 6;
+        for (let j = 0; j < res; j++) {
+          for (let i = 0; i < res; i++) {
+            const wx = -hw + i * dx;
+            const wz = -hd + j * dz;
+            const wy = top + heightField(wx, wz, mode, amp, freq);
+            const eps = dx * 0.5;
+            const hL = heightField(wx-eps, wz, mode, amp, freq);
+            const hR = heightField(wx+eps, wz, mode, amp, freq);
+            const hD = heightField(wx, wz-eps, mode, amp, freq);
+            const hU = heightField(wx, wz+eps, mode, amp, freq);
+            const nx = -(hR-hL)/(2*eps), nz = -(hU-hD)/(2*eps), ny = 1.0;
+            const nl = Math.sqrt(nx*nx+ny*ny+nz*nz);
+            verts.push(wx, wy, wz, nx/nl, ny/nl, nz/nl);
+          }
+        }
+        for (let j = 0; j < res-1; j++) {
+          for (let i = 0; i < res-1; i++) {
+            const a = base + j*res+i;
+            const b = a+1, c = a+res, d = a+res+1;
+            indices.push(a, b, d, a, d, c);
+          }
+        }
+      }
+
+      // Side faces (flat, straight from top to bot)
+      const sides = [
+        [[-hw,bot,-hd,-1,0,0], [-hw,bot,hd,-1,0,0], [-hw,top,-hd,-1,0,0], [-hw,top,hd,-1,0,0]],
+        [[ hw,bot, hd, 1,0,0], [ hw,bot,-hd, 1,0,0], [ hw,top, hd, 1,0,0], [ hw,top,-hd, 1,0,0]],
+        [[ hw,bot,-hd,0,0,-1], [-hw,bot,-hd,0,0,-1], [ hw,top,-hd,0,0,-1], [-hw,top,-hd,0,0,-1]],
+        [[-hw,bot, hd,0,0, 1], [ hw,bot, hd,0,0, 1], [-hw,top, hd,0,0, 1], [ hw,top, hd,0,0, 1]],
+      ];
+      for (const side of sides) {
+        const base = verts.length / 6;
+        for (const v of side) verts.push(...v);
+        indices.push(base, base+1, base+2, base+1, base+3, base+2);
+      }
     }
 
     const va = new Float32Array(verts);

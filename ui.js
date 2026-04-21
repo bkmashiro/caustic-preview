@@ -387,11 +387,11 @@ self.addEventListener('message', async (e) => {
           const targetBlockH     = +(thickness * bW).toFixed(2);
 
           const gdSlider = document.getElementById('ground-dist');
-          gdSlider.value = Math.max(0, Math.min(4, targetGroundDist));
+          gdSlider.value = Math.max(0, Math.min(12, targetGroundDist));
           gdSlider.dispatchEvent(new Event('input'));
 
           const bhSlider = document.getElementById('block-h');
-          bhSlider.value = Math.max(0.2, Math.min(3, targetBlockH));
+          bhSlider.value = Math.max(0.1, Math.min(8, targetBlockH));
           bhSlider.dispatchEvent(new Event('input'));
 
           // Now parse OBJ — params.groundDist / blockH are already updated above
@@ -407,7 +407,7 @@ self.addEventListener('message', async (e) => {
           if (loadInfo && loadInfo.requiredBlockH > targetBlockH) {
             finalBlockH = +loadInfo.requiredBlockH.toFixed(2);
             const bhSlider = document.getElementById('block-h');
-            bhSlider.value = Math.max(0.2, Math.min(3, finalBlockH));
+            bhSlider.value = Math.max(0.1, Math.min(8, finalBlockH));
             bhSlider.dispatchEvent(new Event('input'));
           }
 
