@@ -558,42 +558,53 @@ self.addEventListener('message', async (e) => {
           //   focalL    = (base + lensDepth) / lensSize  (total glass height normalized)
           //   thickness = lensDepth / lensSize            (curved part only)
           // blockH = groundDist = focalL * blockW  (total height = focal distance for table mode)
-          const bW           = parseFloat(document.getElementById('block-w').value);
-          const targetBlockH = +(focalL * bW).toFixed(2); // total glass height in scene units
+          const bW = parseFloat(document.getElementById('block-w').value);
+
+          // Pre-add a small margin so the lens curve never clips below blockBottom
+          // on first load (parseCausticOBJ clamps vertices to blockBottom, so if
+          // blockH < requiredBlockH the mesh is silently truncated).
+          const nominalH = focalL * bW;
+          const minSafeH = thickness * bW + 0.05; // lens curve + margin
+          const targetBlockH = +(Math.max(nominalH, minSafeH)).toFixed(2);
 
           const bhSlider = document.getElementById('block-h');
-          bhSlider.value = Math.max(0.1, Math.min(8, targetBlockH));
-          bhSlider.dispatchEvent(new Event('input'));
-
-          // groundDist = total blockH (lens top to table = full glass height)
           const gdSlider = document.getElementById('ground-dist');
-          gdSlider.value = Math.max(0.1, Math.min(12, targetBlockH));
-          gdSlider.dispatchEvent(new Event('input'));
-
-          // groundY = 0 (table surface at Y=0)
           const gySlider = document.getElementById('ground-y');
+
+          function applyBlockH(h) {
+            const clamped = Math.max(0.1, Math.min(8, h));
+            bhSlider.value = clamped;
+            bhSlider.dispatchEvent(new Event('input'));
+            // groundDist must equal blockH in table mode (lens top = focal distance)
+            const gd = Math.max(0.1, Math.min(12, h));
+            gdSlider.value = gd;
+            gdSlider.dispatchEvent(new Event('input'));
+          }
+
+          // groundY = 0 (table surface at Y = 0)
           gySlider.value = 0;
           gySlider.dispatchEvent(new Event('input'));
 
-          // Now parse OBJ — params.groundDist / blockH are already updated above
+          // Apply initial dimensions, then load OBJ
+          applyBlockH(targetBlockH);
           const loadInfo = app.loadCausticOBJ(objText);
           lastGeneratedObjText = objText;
           if (btnDownloadObj) btnDownloadObj.disabled = false;
 
-          // Auto-increase blockH if the actual lens depth exceeds our preset estimate.
-          // This happens when the solver pushes some vertices slightly deeper than the
-          // nominal thickness (numerical overshoot), causing those surface points to
-          // fall below blockBottom → t1<0 in ray trace → missing caustic regions.
+          // If solver overshot the nominal thickness, bump blockH + groundDist
+          // and reload OBJ with the corrected params so nothing is clamped.
           let finalBlockH = targetBlockH;
           if (loadInfo && loadInfo.requiredBlockH > targetBlockH) {
-            finalBlockH = +loadInfo.requiredBlockH.toFixed(2);
-            const bhSlider2 = document.getElementById('block-h');
-            bhSlider2.value = Math.max(0.1, Math.min(8, finalBlockH));
-            bhSlider2.dispatchEvent(new Event('input'));
+            finalBlockH = +(loadInfo.requiredBlockH + 0.02).toFixed(2);
+            applyBlockH(finalBlockH);
+            app.loadCausticOBJ(objText); // re-parse with corrected blockH
           }
 
+          // Reset camera so the generated lens is centred in view
+          app.setCameraPreset('persp');
+
           setProgress(100);
-          setWasmStatus(`Done! groundDist→${targetBlockH.toFixed(2)}, blockH→${finalBlockH}`);
+          setWasmStatus(`Done — blockH: ${finalBlockH.toFixed(2)}, groundDist: ${finalBlockH.toFixed(2)}`);
         } catch (err) {
           setWasmStatus('OBJ parse error: ' + err.message, true);
         }
