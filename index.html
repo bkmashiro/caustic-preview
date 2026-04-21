@@ -480,22 +480,37 @@
       <img id="img-preview" alt="Uploaded image preview">
     </div>
 
-    <!-- Parameters -->
+    <!-- Device preset -->
     <div class="control-row" style="margin-top:8px">
-      <label>Resolution (W)</label>
-      <input type="range" id="wasm-res-w" min="20" max="100" value="50" step="1">
-      <span class="value-display" id="wasm-res-w-val">50</span>
+      <label>Printer</label>
+      <select id="device-preset" style="flex:1;background:#1e1e2a;color:#e0e0e0;border:1px solid #3a3a50;border-radius:4px;padding:3px 6px;font-size:12px;">
+        <option value="form4_fast">Form 4 / SLA 25μm — Fast (48pt)</option>
+        <option value="form4_fine" selected>Form 4 / SLA 25μm — Fine (80pt)</option>
+        <option value="form4_ultra">Form 4 / SLA 25μm — Ultra (128pt)</option>
+        <option value="hubs_sla">Hubs.com Premium SLA (64pt)</option>
+        <option value="preview">Quick Preview — Low res (32pt)</option>
+      </select>
     </div>
+    <!-- Lens size -->
     <div class="control-row">
-      <label>Focal Length</label>
-      <input type="range" id="wasm-focal-l" min="0.5" max="3.0" value="1.5" step="0.05">
-      <span class="value-display" id="wasm-focal-l-val">1.50</span>
+      <label>Lens size</label>
+      <input type="range" id="lens-size-mm" min="20" max="80" value="40" step="5">
+      <span class="value-display" id="lens-size-mm-val">40 mm</span>
     </div>
+    <!-- Projection distance -->
     <div class="control-row">
-      <label>Thickness</label>
-      <input type="range" id="wasm-thickness" min="0.05" max="0.5" value="0.2" step="0.01">
-      <span class="value-display" id="wasm-thickness-val">0.20</span>
+      <label>Projection dist.</label>
+      <input type="range" id="proj-dist-mm" min="20" max="120" value="40" step="5">
+      <span class="value-display" id="proj-dist-mm-val">40 mm</span>
     </div>
+    <!-- Computed params display -->
+    <div style="font-size:10px;color:#555;margin:4px 0 6px;padding:4px 6px;background:#111;border-radius:3px;line-height:1.6" id="computed-params-display">
+      res_w: 80 · focal_l: 1.00 · thickness: 0.15
+    </div>
+    <!-- Hidden inputs still used by generate logic -->
+    <input type="hidden" id="wasm-res-w" value="80">
+    <input type="hidden" id="wasm-focal-l" value="1.00">
+    <input type="hidden" id="wasm-thickness" value="0.15">
 
     <!-- Generate button -->
     <button class="btn" id="btn-generate" disabled>⚡ Generate Caustic Surface</button>

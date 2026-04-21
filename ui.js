@@ -98,20 +98,46 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ─── Generate from Image (WASM pipeline) ──────────────────────────────────
 
-  // Wire the parameter sliders for the WASM panel
-  function wireWasmSlider(id, decimals) {
-    const slider = document.getElementById(id);
-    const display = document.getElementById(id + '-val');
-    if (!slider || !display) return;
-    function update() {
-      display.textContent = parseFloat(slider.value).toFixed(decimals);
-    }
-    slider.addEventListener('input', update);
-    update();
+  // ── Device presets ───────────────────────────────────────────────────────────
+  const DEVICE_PRESETS = {
+    form4_fast:  { resW: 48,  thicknessRatio: 0.15 },
+    form4_fine:  { resW: 80,  thicknessRatio: 0.12 },
+    form4_ultra: { resW: 128, thicknessRatio: 0.10 },
+    hubs_sla:    { resW: 64,  thicknessRatio: 0.15 },
+    preview:     { resW: 32,  thicknessRatio: 0.20 },
+  };
+
+  function updateComputedParams() {
+    const presetKey = document.getElementById('device-preset').value;
+    const preset    = DEVICE_PRESETS[presetKey] || DEVICE_PRESETS.form4_fine;
+    const lensSize  = parseInt(document.getElementById('lens-size-mm').value, 10);
+    const projDist  = parseInt(document.getElementById('proj-dist-mm').value, 10);
+
+    // Update display labels
+    document.getElementById('lens-size-mm-val').textContent = lensSize + ' mm';
+    document.getElementById('proj-dist-mm-val').textContent = projDist + ' mm';
+
+    // Derived parameters (normalised to lens width = 1.0)
+    const focalL    = (projDist / lensSize).toFixed(2);
+    const thickness = preset.thicknessRatio.toFixed(2);
+    const resW      = preset.resW;
+
+    // Write to hidden inputs (used by generate handler)
+    document.getElementById('wasm-res-w').value      = resW;
+    document.getElementById('wasm-focal-l').value    = focalL;
+    document.getElementById('wasm-thickness').value  = thickness;
+
+    // Update info display
+    document.getElementById('computed-params-display').textContent =
+      `res_w: ${resW} · focal_l: ${focalL} · thickness: ${thickness} · est. vertices: ${resW}²=${resW*resW}`;
   }
-  wireWasmSlider('wasm-res-w',    0);
-  wireWasmSlider('wasm-focal-l',  2);
-  wireWasmSlider('wasm-thickness',2);
+
+  ['device-preset','lens-size-mm','proj-dist-mm'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', updateComputedParams);
+    if (el && el.type === 'range') el.addEventListener('input', updateComputedParams);
+  });
+  updateComputedParams(); // init
 
   // State
   let pngFileData = null;        // Uint8Array of the uploaded PNG
