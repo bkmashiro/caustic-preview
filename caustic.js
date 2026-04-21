@@ -26,7 +26,7 @@ const CausticRenderer = (() => {
   let causticW = 1024, causticH = 1024;
 
   // Shader programs
-  let progCompute, progDisplay, progScene, progGround, progGrid;
+  let progCompute, progDisplay, progScene, progGround, progGrid, progBlit;
 
   // Geometry buffers
   let surfaceVAO, surfaceVBO; // surface sample points
@@ -55,6 +55,7 @@ const CausticRenderer = (() => {
     blockColor: [0.541, 0.706, 0.816],
     showBlock: true,
     showGrid: true,
+    showCausticOnly: false,
   };
 
   // Camera
@@ -385,6 +386,32 @@ void main() {
   col = mix(col, vec3(0.9, 0.95, 1.0), fresnel * 0.5);
 
   fragColor = vec4(col, 0.35 + fresnel * 0.4);
+}
+`;
+
+  // Pass: Blit caustic FBO directly to screen (debug / caustic-only view)
+  const VS_BLIT = `#version 300 es
+precision highp float;
+layout(location=0) in vec2 aPos;
+out vec2 vUV;
+void main() {
+  vUV = aPos * 0.5 + 0.5;
+  gl_Position = vec4(aPos, 0.0, 1.0);
+}
+`;
+
+  const FS_BLIT = `#version 300 es
+precision highp float;
+in vec2 vUV;
+uniform sampler2D uTex;
+uniform float uExposure;
+uniform vec3 uCausticColor;
+out vec4 fragColor;
+void main() {
+  float v = texture(uTex, vUV).r;
+  // tone-map same as ground shader
+  v = 1.0 - exp(-v * uExposure);
+  fragColor = vec4(uCausticColor * v, 1.0);
 }
 `;
 
@@ -774,13 +801,46 @@ void main() {
     gl.uniform1f(ul(progCompute, 'uBlockD'), params.blockD);
     gl.uniform1f(ul(progCompute, 'uGroundHalf'), groundSize / 2);
     gl.uniform1f(ul(progCompute, 'uSpread'), params.spread);
-    gl.uniform1f(ul(progCompute, 'uIntensity'), params.intensity);
+    // Scale intensity so OBJ (fewer points) produces same brightness as sinusoidal default
+    const numPts = surfaceGridW * surfaceGridH;
+    const refPts = 128 * 128;
+    const ptScale = Math.sqrt(refPts / Math.max(numPts, 1));
+    gl.uniform1f(ul(progCompute, 'uIntensity'), params.intensity * ptScale);
 
     gl.bindVertexArray(surfaceVAO);
-    gl.drawArrays(gl.POINTS, 0, surfaceGridW * surfaceGridH);
+    gl.drawArrays(gl.POINTS, 0, numPts);
     gl.bindVertexArray(null);
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+    // ── Caustic-only view: blit FBO texture directly to screen ────────────
+    if (params.showCausticOnly) {
+      const W = canvas.width, H = canvas.height;
+      gl.viewport(0, 0, W, H);
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.disable(gl.DEPTH_TEST);
+      gl.disable(gl.BLEND);
+
+      gl.useProgram(progBlit);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, causticTex);
+      gl.uniform1i(ul(progBlit, 'uTex'), 0);
+      gl.uniform1f(ul(progBlit, 'uExposure'), params.exposure);
+      gl.uniform3fv(ul(progBlit, 'uCausticColor'), params.causticColor);
+
+      gl.bindVertexArray(quadVAO);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      gl.bindVertexArray(null);
+
+      lastFrameMs = performance.now() - t0;
+      frameCount++;
+      const nPtsDisp = surfaceGridW * surfaceGridH;
+      document.getElementById('perf-display').textContent =
+        `⏱ ${lastFrameMs.toFixed(1)}ms | ${nPtsDisp.toLocaleString()} pts`;
+      requestAnimationFrame(render);
+      return;
+    }
 
     // ── Pass 2 + 3: Render scene ──────────────────────────────────────────
     const dpr = window.devicePixelRatio || 1;
@@ -841,7 +901,6 @@ void main() {
     frameCount++;
 
     // Update perf display
-    const numPts = surfaceGridW * surfaceGridH;
     document.getElementById('perf-display').textContent =
       `⏱ ${lastFrameMs.toFixed(1)}ms | ${numPts.toLocaleString()} pts`;
 
@@ -1090,6 +1149,7 @@ void main() {
       progCompute = createProgram(VS_COMPUTE, FS_COMPUTE);
       progScene   = createProgram(VS_SCENE, FS_SCENE);
       progGround  = createProgram(VS_GROUND, FS_GROUND);
+      progBlit    = createProgram(VS_BLIT, FS_BLIT);
     } catch(e) {
       console.error(e);
       alert('Shader compilation failed:\n' + e.message);

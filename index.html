@@ -19,11 +19,13 @@
   #sidebar {
     width: 300px;
     min-width: 300px;
+    max-width: 300px;
     background: #16161e;
     border-right: 1px solid #2a2a3a;
     display: flex;
     flex-direction: column;
     overflow-y: auto;
+    overflow-x: hidden;
     z-index: 10;
   }
 
@@ -556,6 +558,10 @@
     <div class="control-row">
       <label>Show Grid</label>
       <input type="checkbox" id="show-grid" checked style="cursor:pointer">
+    </div>
+    <div class="control-row">
+      <label>Caustic Map Only</label>
+      <input type="checkbox" id="show-caustic-only" style="cursor:pointer">
     </div>
   </div>
 

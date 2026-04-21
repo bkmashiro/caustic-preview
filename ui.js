@@ -79,6 +79,10 @@ document.addEventListener('DOMContentLoaded', () => {
     app.setParam('showGrid', e.target.checked);
   });
 
+  document.getElementById('show-caustic-only').addEventListener('change', e => {
+    app.setParam('showCausticOnly', e.target.checked);
+  });
+
   // ─── OBJ File Upload ──────────────────────────────────────────────────────
 
   document.getElementById('obj-file-input').addEventListener('change', e => {
