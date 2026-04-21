@@ -114,30 +114,204 @@ document.addEventListener('DOMContentLoaded', () => {
     preview:     { resW: 32,  thicknessRatio: 0.20 },
   };
 
-  function updateComputedParams() {
-    const presetKey     = document.getElementById('device-preset').value;
-    const preset        = DEVICE_PRESETS[presetKey] || DEVICE_PRESETS.form4_fine;
-    const lensSize      = parseFloat(document.getElementById('lens-size-mm').value) || 50;
-    const glassThickMm  = parseFloat(document.getElementById('proj-dist-mm').value) || 8;
-    const resW          = preset.resW;
+  // ── Lens cross-section schematic ──────────────────────────────────────────
 
-    // Table-on-ground mode: the lens sits flat on the table.
-    // focal_l = glassThickness / lensSize  (light exits at table level = focal plane)
-    // thickness = focal_l  (lens curves from flat top all the way down to table)
-    const focalL    = +(glassThickMm / lensSize).toFixed(3);
-    const thickness = focalL; // same value: deformation depth = focal distance
+  function drawLensDiagram() {
+    const canvas = document.getElementById('lens-diagram');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const CW = canvas.width, CH = canvas.height;
 
-    // Write to hidden inputs (used by generate handler)
-    document.getElementById('wasm-res-w').value      = resW;
-    document.getElementById('wasm-focal-l').value    = focalL;
-    document.getElementById('wasm-thickness').value  = thickness;
+    const lensMm  = parseFloat(document.getElementById('proj-dist-mm').value)  || 6;
+    const baseMm  = parseFloat(document.getElementById('base-thick-mm').value) || 2;
+    const lensSz  = parseFloat(document.getElementById('lens-size-mm').value)  || 50;
+    const totalMm = Math.max(lensMm + baseMm, 0.01);
 
-    // Update info display
-    document.getElementById('computed-params-display').textContent =
-      `res_w: ${resW} · focal_l: ${focalL.toFixed(2)} · thickness: ${thickness.toFixed(2)} · 顶点数: ${resW}²=${resW*resW}`;
+    ctx.clearRect(0, 0, CW, CH);
+
+    // ── Layout ──
+    const blockL  = 12, blockR = 122;        // block X bounds (110px wide)
+    const topY    = 20;                       // top of block (below rays)
+    const groundY = 152;                      // table surface Y
+    const bodyH   = groundY - topY;          // 132px available
+
+    const lensH   = (lensMm / totalMm) * bodyH;
+    const baseH   = (baseMm / totalMm) * bodyH;
+    const lensBot = topY + lensH;
+    const baseBot = lensBot + baseH;          // ≈ groundY
+    const curveAmt = Math.min(lensH * 0.45, 16);
+    const arcY    = topY + curveAmt * 0.5;   // Y where arc meets left/right edge
+
+    // ── Light rays ──
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,210,55,0.55)';
+    ctx.lineWidth = 0.9;
+    ctx.setLineDash([2, 3]);
+    for (let i = 0; i < 7; i++) {
+      const x = blockL + (i + 0.5) / 7 * (blockR - blockL);
+      ctx.beginPath(); ctx.moveTo(x, 2); ctx.lineTo(x, arcY - 2); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // ── Glass block ──
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(blockL, arcY);
+    ctx.bezierCurveTo(
+      blockL, topY - curveAmt * 0.3,
+      blockR, topY - curveAmt * 0.3,
+      blockR, arcY
+    );
+    ctx.lineTo(blockR, baseBot);
+    ctx.lineTo(blockL, baseBot);
+    ctx.closePath();
+
+    const gGlass = ctx.createLinearGradient(blockL, topY, blockR, baseBot);
+    gGlass.addColorStop(0,   'rgba(115,172,245,0.22)');
+    gGlass.addColorStop(0.5, 'rgba(90,148,215,0.15)');
+    gGlass.addColorStop(1,   'rgba(65,125,190,0.09)');
+    ctx.fillStyle = gGlass;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(100,162,232,0.80)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+
+    // ── Lens / base divider (dashed) ──
+    if (baseMm > 0.5) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(blockL, lensBot); ctx.lineTo(blockR, lensBot);
+      ctx.strokeStyle = 'rgba(100,162,232,0.28)';
+      ctx.lineWidth = 0.8;
+      ctx.setLineDash([4, 3]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
+    // ── Ground line + hatch ──
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(blockL - 8, groundY); ctx.lineTo(blockR + 6, groundY);
+    ctx.strokeStyle = '#3a4a5a';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(42,58,78,0.7)';
+    ctx.lineWidth = 0.6;
+    for (let x = blockL - 8; x <= blockR + 6; x += 5) {
+      ctx.beginPath(); ctx.moveTo(x, groundY); ctx.lineTo(x - 4, groundY + 5); ctx.stroke();
+    }
+    ctx.restore();
+
+    // ── Caustic glow on table ──
+    ctx.save();
+    const gGlow = ctx.createLinearGradient(blockL, 0, blockR, 0);
+    gGlow.addColorStop(0,   'rgba(255,200,50,0)');
+    gGlow.addColorStop(0.18,'rgba(255,205,60,0.40)');
+    gGlow.addColorStop(0.5, 'rgba(255,220,80,0.65)');
+    gGlow.addColorStop(0.82,'rgba(255,205,60,0.40)');
+    gGlow.addColorStop(1,   'rgba(255,200,50,0)');
+    ctx.fillStyle = gGlow;
+    ctx.fillRect(blockL, groundY + 1, blockR - blockL, 8);
+    ctx.restore();
+
+    // ── Right-side dimension brackets + connectors ──
+    const brkX = blockR + 8;
+    function bracket(y1, y2, color) {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      // Vertical bar
+      ctx.beginPath(); ctx.moveTo(brkX, y1); ctx.lineTo(brkX, y2); ctx.stroke();
+      // End ticks
+      ctx.beginPath();
+      ctx.moveTo(brkX - 3, y1); ctx.lineTo(brkX + 3, y1);
+      ctx.moveTo(brkX - 3, y2); ctx.lineTo(brkX + 3, y2);
+      ctx.stroke();
+      // Dashed connector from midpoint to canvas right edge
+      const midY = (y1 + y2) / 2;
+      ctx.setLineDash([2, 2]);
+      ctx.beginPath(); ctx.moveTo(brkX + 3, midY); ctx.lineTo(CW - 1, midY); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
+    bracket(arcY, lensBot, 'rgba(78,152,232,0.70)');              // lens depth
+    if (baseMm > 0.5)
+      bracket(lensBot, baseBot, 'rgba(72,192,128,0.70)');         // base
+
+    // ── Width arrow at bottom ──
+    const wY = groundY + 14;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(140,170,200,0.55)';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.moveTo(blockL, wY); ctx.lineTo(blockR, wY); ctx.stroke();
+    // ticks
+    ctx.beginPath();
+    ctx.moveTo(blockL, wY - 3); ctx.lineTo(blockL, wY + 3);
+    ctx.moveTo(blockR, wY - 3); ctx.lineTo(blockR, wY + 3);
+    ctx.stroke();
+    // arrowheads
+    ctx.beginPath();
+    ctx.moveTo(blockL + 6, wY - 3); ctx.lineTo(blockL, wY); ctx.lineTo(blockL + 6, wY + 3);
+    ctx.moveTo(blockR - 6, wY - 3); ctx.lineTo(blockR, wY); ctx.lineTo(blockR - 6, wY + 3);
+    ctx.stroke();
+    // label
+    ctx.fillStyle = 'rgba(140,165,195,0.75)';
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(lensSz + ' mm', (blockL + blockR) / 2, wY - 4);
+    ctx.restore();
+
+    // ── Adjust right-panel spacer heights so inputs align with their regions ──
+    const DBLK = 40, BBLK = 40;   // height of each input block (px)
+    const cD = arcY + lensH / 2;                  // canvas Y centre of lens region
+    const cB = lensBot + Math.max(baseH, 0) / 2;  // canvas Y centre of base region
+
+    const spTop = document.getElementById('ldim-sp-top');
+    const spMid = document.getElementById('ldim-sp-mid');
+    if (spTop && spMid) {
+      const hTop = Math.max(0, Math.round(cD - DBLK / 2));
+      const hMid = Math.max(2, Math.round(cB - DBLK / 2 - hTop - DBLK));
+      spTop.style.height = hTop + 'px';
+      spMid.style.height = hMid + 'px';
+    }
   }
 
-  ['device-preset','lens-size-mm','proj-dist-mm'].forEach(id => {
+  function updateComputedParams() {
+    const presetKey    = document.getElementById('device-preset').value;
+    const preset       = DEVICE_PRESETS[presetKey] || DEVICE_PRESETS.form4_fine;
+    const lensSize     = parseFloat(document.getElementById('lens-size-mm').value) || 50;
+    const baseMm       = parseFloat(document.getElementById('base-thick-mm').value) || 2;
+    const lensMm       = parseFloat(document.getElementById('proj-dist-mm').value) || 6;
+    const resW         = preset.resW;
+
+    // Three-input physical model:
+    //   focalL    = (base + lensDepth) / lensSize   → total height normalized
+    //   thickness = lensDepth / lensSize             → only the curved part
+    // Table-on-ground: light exits at bottom, focal plane = table surface.
+    // groundDist = focalL * blockW  (lens top to table = total glass height)
+    // blockH     = focalL * blockW  (same: full block height)
+    const focalL    = +((baseMm + lensMm) / lensSize).toFixed(4);
+    const thickness = +(lensMm / lensSize).toFixed(4);
+
+    // Write to hidden inputs (used by generate handler)
+    document.getElementById('wasm-res-w').value     = resW;
+    document.getElementById('wasm-focal-l').value   = focalL;
+    document.getElementById('wasm-thickness').value = thickness;
+
+    // Update info display
+    const totalMm = baseMm + lensMm;
+    document.getElementById('computed-params-display').textContent =
+      `res_w: ${resW} · 总高度: ${totalMm}mm · focal_l: ${focalL.toFixed(3)} · thickness: ${thickness.toFixed(3)} · 顶点数: ${resW}²=${resW*resW}`;
+
+    // Redraw schematic diagram
+    drawLensDiagram();
+  }
+
+  ['device-preset','lens-size-mm','base-thick-mm','proj-dist-mm'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('change', updateComputedParams);
     if (el) el.addEventListener('input', updateComputedParams);
@@ -380,22 +554,23 @@ self.addEventListener('message', async (e) => {
         setProgress(90);
         // Load the OBJ into the WebGL renderer
         try {
-          // Table-on-ground mode: lens sits flat on table, caustic appears on table.
-          // focal distance = glass thickness (both equal focalL × blockW).
-          // blockBottom = groundY = 0; blockTop = blockH = groundDist.
-          const bW = parseFloat(document.getElementById('block-w').value);
-          const targetBlockH = +(focalL * bW).toFixed(2); // thickness = focal dist
+          // Three-input model:
+          //   focalL    = (base + lensDepth) / lensSize  (total glass height normalized)
+          //   thickness = lensDepth / lensSize            (curved part only)
+          // blockH = groundDist = focalL * blockW  (total height = focal distance for table mode)
+          const bW           = parseFloat(document.getElementById('block-w').value);
+          const targetBlockH = +(focalL * bW).toFixed(2); // total glass height in scene units
 
           const bhSlider = document.getElementById('block-h');
           bhSlider.value = Math.max(0.1, Math.min(8, targetBlockH));
           bhSlider.dispatchEvent(new Event('input'));
 
-          // groundDist = blockH (lens top to table = thickness)
+          // groundDist = total blockH (lens top to table = full glass height)
           const gdSlider = document.getElementById('ground-dist');
           gdSlider.value = Math.max(0.1, Math.min(12, targetBlockH));
           gdSlider.dispatchEvent(new Event('input'));
 
-          // groundY = 0 (table surface)
+          // groundY = 0 (table surface at Y=0)
           const gySlider = document.getElementById('ground-y');
           gySlider.value = 0;
           gySlider.dispatchEvent(new Event('input'));
@@ -412,13 +587,13 @@ self.addEventListener('message', async (e) => {
           let finalBlockH = targetBlockH;
           if (loadInfo && loadInfo.requiredBlockH > targetBlockH) {
             finalBlockH = +loadInfo.requiredBlockH.toFixed(2);
-            const bhSlider = document.getElementById('block-h');
-            bhSlider.value = Math.max(0.1, Math.min(8, finalBlockH));
-            bhSlider.dispatchEvent(new Event('input'));
+            const bhSlider2 = document.getElementById('block-h');
+            bhSlider2.value = Math.max(0.1, Math.min(8, finalBlockH));
+            bhSlider2.dispatchEvent(new Event('input'));
           }
 
           setProgress(100);
-          setWasmStatus(`Done! groundDist→${targetGroundDist}, blockH→${finalBlockH}`);
+          setWasmStatus(`Done! groundDist→${targetBlockH.toFixed(2)}, blockH→${finalBlockH}`);
         } catch (err) {
           setWasmStatus('OBJ parse error: ' + err.message, true);
         }
